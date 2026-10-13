@@ -10,6 +10,8 @@ from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
+from apps.scoping import scoped_infos
+
 User = get_user_model()
 
 MAX_FAILED_ATTEMPTS = 5
@@ -140,7 +142,24 @@ def logout_view(request):
 
 @login_required(login_url='login')
 def home(request):
-    return render(request, 'home.html')
+    records = scoped_infos(request.user).order_by('-updated_at')
+    context = {
+        'dashboard_role': (
+            'Administrator' if request.user.is_superuser
+            else 'Staff / Officer' if request.user.is_staff
+            else 'User'
+        ),
+        'records_count': records.count(),
+        'recent_records': records[:5],
+    }
+
+    if request.user.is_superuser:
+        context.update({
+            'users_count': User.objects.count(),
+            'active_users_count': User.objects.filter(is_active=True).count(),
+        })
+
+    return render(request, 'home.html', context)
 
 
 @require_http_methods(['GET', 'POST'])

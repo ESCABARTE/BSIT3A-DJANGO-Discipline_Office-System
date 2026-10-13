@@ -8,15 +8,7 @@
   content="width=device-width, initial-scale=1, viewport-fit=cover"
   />
   <meta http-equiv="X-UA-Compatible" content="ie=edge" />
-  <title>
-    Sign in - Tabler
-</title>
-<link rel="icon" href="./favicon-dev.ico" type="image/x-icon" />
-<link rel="shortcut icon" href="./favicon-dev.ico" type="image/x-icon" />
-<link
-href="{% static 'libs/jsvectormap/dist/jsvectormap.css' %}"
-rel="stylesheet"
-/>
+  <title>Create an account | Discipline Office</title>
 <link href="{% static 'css/tabler.css' %}" rel="stylesheet" />
 <link href="{% static 'css/tabler-flags.css' %}" rel="stylesheet" />
 <link href="{% static 'css/tabler-socials.css' %}" rel="stylesheet" />
@@ -24,22 +16,23 @@ rel="stylesheet"
 <link href="{% static 'css/tabler-vendors.css' %}" rel="stylesheet" />
 <link href="{% static 'css/tabler-marketing.css' %}" rel="stylesheet" />
 <link href="{% static 'css/tabler-themes.css' %}" rel="stylesheet" />
+<link href="{% static 'css/app-theme.css' %}" rel="stylesheet" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <style>
     @import url("https://rsms.me/inter/inter.css");
 </style>
 </head>
-<body class="antialiased">
+<body class="antialiased login-body">
     <script src="{% static 'js/tabler-theme.js' %}"></script>
     <div class="page page-center">
         <div class="container container-tight py-4">
 
-            <!-- Logo / Brand -->
-            <center class="mb-2">
-                <span class="fw-bold fs-1 text-body">
-                  GoldHeist <span class="text-primary">Trader</span>
-              </span>
-          </center>
+            <header class="login-brand">
+                <span class="login-brand-rule" aria-hidden="true"></span>
+                <p class="login-school-name">Kabankalan Catholic College, Inc.</p>
+                <h1>DISCIPLINE OFFICE</h1>
+                <p class="login-brand-caption">Discipline Office Management System</p>
+            </header>
 
           <div class="card card-md">
             <div class="card-body">
@@ -189,7 +182,6 @@ rel="stylesheet"
 {% include 'theme/settings.html' %}
 
 <script src="{% static 'js/tabler.js' %}" defer></script>
-<script src="{% static 'js/demo.js' %}" defer></script>
 <script>
     document.getElementById('togglePassword').addEventListener('click', function() {
         const input = document.getElementById('password');

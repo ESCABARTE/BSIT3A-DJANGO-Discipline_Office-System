@@ -1,26 +1,98 @@
 {% extends "theme/base.html" %}
+{% load static %}
+{% block title %}Dashboard | Discipline Office{% endblock %}
 {% block content %}
-<div class="container-xl">
-  <div class="page-header d-print-none" aria-label="Page header">
-    <div class="container-xl">
-      <div class="row align-items-center">
-        <div class="col">
-          <div class="page-pretitle">Overview</div>
-          <div class="d-flex align-items-center gap-3 flex-wrap d-none d-md-flex">
-            <h2 class="page-title mb-0">Dashboard</h2>
-          </div>
-          <h2 class="page-title mb-0 d-md-none">Dashboard</h2>
-        </div>
+<main class="container-xl dashboard-page">
+  <section class="dh-hero mb-4" aria-labelledby="dashboard-title">
+    <div class="dh-hero-inner d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+      <div>
+        <div class="dh-hero-pretitle">{{ dashboard_role }} workspace</div>
+        <h1 class="dh-hero-title" id="dashboard-title">
+          Welcome{% if user.first_name %}, {{ user.first_name }}{% else %}, {{ user.username }}{% endif %}
+        </h1>
+        <p class="dh-hero-sub mb-0">
+          Your Discipline Office Management System dashboard.
+        </p>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-accent" href="{% url 'info:info_list' %}">
+          <i class="fas fa-address-card me-2" aria-hidden="true"></i>Personal Information
+        </a>
+        {% if user.is_superuser %}
+        <a class="btn btn-outline-light" href="{% url 'users:user_list' %}">
+          <i class="fas fa-users me-2" aria-hidden="true"></i>Manage Users
+        </a>
+        {% endif %}
       </div>
     </div>
-  </div>
-  <br>
+  </section>
 
-  <div class="card">
-    <div class="card-body text-muted">
-      Dashboard
+  <section aria-label="Account summary" class="row row-cards mb-4">
+    {% if user.is_superuser %}
+    <div class="col-12 col-sm-6 col-xl-4">
+      <article class="card dh-summary-card h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <span class="dh-summary-icon dh-summary-icon-navy"><i class="fas fa-users" aria-hidden="true"></i></span>
+          <div><div class="text-secondary">Registered accounts</div><div class="h2 mb-0">{{ users_count }}</div></div>
+        </div>
+      </article>
     </div>
-  </div>
+    <div class="col-12 col-sm-6 col-xl-4">
+      <article class="card dh-summary-card h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <span class="dh-summary-icon dh-summary-icon-green"><i class="fas fa-user-check" aria-hidden="true"></i></span>
+          <div><div class="text-secondary">Active accounts</div><div class="h2 mb-0">{{ active_users_count }}</div></div>
+        </div>
+      </article>
+    </div>
+    {% endif %}
+    <div class="col-12 col-sm-6 col-xl-4">
+      <article class="card dh-summary-card h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <span class="dh-summary-icon dh-summary-icon-gold"><i class="fas fa-folder-open" aria-hidden="true"></i></span>
+          <div><div class="text-secondary">My information records</div><div class="h2 mb-0">{{ records_count }}</div></div>
+        </div>
+      </article>
+    </div>
+  </section>
 
-</div>
+  <section class="card dh-records-card" aria-labelledby="recent-records-title">
+    <div class="card-header d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2">
+      <div>
+        <h2 class="card-title mb-1" id="recent-records-title">Recently updated records</h2>
+        <p class="text-secondary small mb-0">Only information associated with your account is shown.</p>
+      </div>
+      <a href="{% url 'info:info_list' %}" class="btn btn-outline-primary btn-sm">View all information</a>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table">
+        <thead>
+          <tr><th>Name</th><th>Age</th><th>Last updated</th></tr>
+        </thead>
+        <tbody>
+          {% for record in recent_records %}
+          <tr>
+            <td class="fw-semibold">{{ record.name }}</td>
+            <td>{{ record.age }}</td>
+            <td class="text-secondary">{{ record.updated_at|date:"M j, Y" }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="3">
+              <div class="empty py-4">
+                <div class="empty-icon"><i class="fas fa-folder-open" aria-hidden="true"></i></div>
+                <p class="empty-title">No records yet</p>
+                <p class="empty-subtitle">Information associated with your account will appear here.</p>
+                <div class="empty-action">
+                  <a href="{% url 'info:info_list' %}" class="btn btn-primary">View Personal Information</a>
+                </div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>
 {% endblock %}
