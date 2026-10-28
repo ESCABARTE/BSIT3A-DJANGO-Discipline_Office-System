@@ -58,6 +58,19 @@ class DisciplineAccessAndWorkflowTests(TestCase):
         response = self.client.get(reverse('discipline:dashboard'))
         self.assertRedirects(response, reverse('discipline:case_list'))
 
+    def test_unified_intake_uses_compact_type_selector_without_choice_cards(self):
+        self.client.force_login(self.staff)
+        official_response = self.client.get(reverse('discipline:intake'))
+        self.assertEqual(official_response.status_code, 200)
+        self.assertEqual(official_response.context['report_type'], CaseReport.ReportType.INCIDENT)
+        self.assertContains(official_response, 'name="report_type"')
+        self.assertNotContains(official_response, 'intake-type-card')
+
+        self.client.force_login(self.student)
+        user_response = self.client.get(reverse('discipline:intake'))
+        self.assertEqual(user_response.context['report_type'], CaseReport.ReportType.COMPLAINT)
+        self.assertNotContains(user_response, 'value="incident"')
+
     def test_dashboard_summary_cards_link_to_matching_case_status_groups(self):
         cases_by_group = {
             'submitted': [DisciplinaryCase.Status.SUBMITTED] * 2,

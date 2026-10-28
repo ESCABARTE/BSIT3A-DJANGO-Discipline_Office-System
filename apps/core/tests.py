@@ -3,6 +3,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from apps.info.models import Info
+from apps.discipline.models import CaseReport, DisciplinaryCase
 
 
 class HomeViewTests(TestCase):
@@ -63,6 +64,46 @@ class HomeViewTests(TestCase):
         self.assertEqual(response.context['users_count'], 3)
         self.assertEqual(response.context['active_users_count'], 2)
         self.assertEqual(response.context['records_count'], 1)
+
+    def test_dashboard_shows_scoped_case_metrics_and_recent_records(self):
+        admin = get_user_model().objects.create_superuser(username='case-admin', password='secret1234')
+        cases = [
+            (DisciplinaryCase.Status.SUBMITTED, 'Year 1'),
+            (DisciplinaryCase.Status.RETURNED, 'Year 1'),
+            (DisciplinaryCase.Status.INVESTIGATION, ''),
+            (DisciplinaryCase.Status.CLOSED, ''),
+        ]
+        for status, year_section in cases:
+            case = DisciplinaryCase.objects.create(
+                source_type=CaseReport.ReportType.COMPLAINT,
+                status=status,
+            )
+            CaseReport.objects.create(
+                case=case,
+                report_type=CaseReport.ReportType.COMPLAINT,
+                submitted_by=admin,
+                respondent_name='Test Student',
+                respondent_year_section=year_section,
+                narration='Test report',
+            )
+
+        self.client.force_login(admin)
+        response = self.client.get(reverse('dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['case_count'], 4)
+        self.assertEqual(response.context['pending_cases_count'], 2)
+        self.assertEqual(response.context['review_cases_count'], 1)
+        self.assertEqual(response.context['resolved_cases_count'], 1)
+        self.assertEqual(response.context['records_by_level'][0]['total'], 2)
+        self.assertContains(response, 'Recent Discipline Records')
+        self.assertContains(response, '?status_group=pending')
+        self.assertContains(response, '?status_group=review')
+        self.assertContains(response, '?status_group=resolved')
+        for group, expected_count in (('pending', 2), ('review', 1), ('resolved', 1)):
+            case_list = self.client.get(reverse('discipline:case_list'), {'status_group': group})
+            self.assertEqual(case_list.status_code, 200)
+            self.assertEqual(case_list.context['cases'].paginator.count, expected_count)
 
     def test_home_requires_login(self):
         response = self.client.get(reverse('dashboard'))

@@ -64,6 +64,11 @@ def _navigation_context(request):
 
 
 CASE_STATUS_GROUPS = {
+    'pending': (
+        DisciplinaryCase.Status.SUBMITTED,
+        DisciplinaryCase.Status.INITIAL_REVIEW,
+        DisciplinaryCase.Status.RETURNED,
+    ),
     'submitted': (DisciplinaryCase.Status.SUBMITTED,),
     'review': (
         DisciplinaryCase.Status.INITIAL_REVIEW,
@@ -74,6 +79,10 @@ CASE_STATUS_GROUPS = {
     'decision': (
         DisciplinaryCase.Status.DECISION,
         DisciplinaryCase.Status.APPEAL,
+    ),
+    'resolved': (
+        DisciplinaryCase.Status.CLOSED,
+        DisciplinaryCase.Status.REFERRED,
     ),
 }
 
@@ -711,7 +720,13 @@ def reports(request):
 @require_http_methods(['GET', 'POST'])
 def intake(request):
     """Single unified page for both Written Complaint and Incident Report."""
-    raw_type = request.POST.get('report_type') or request.GET.get('report_type', '')
+    raw_type = request.POST.get('report_type') if request.method == 'POST' else request.GET.get('report_type')
+    if raw_type is None or raw_type == '':
+        raw_type = (
+            CaseReport.ReportType.INCIDENT
+            if is_official(request.user)
+            else CaseReport.ReportType.COMPLAINT
+        )
     report_type = raw_type if raw_type in CaseReport.ReportType.values else ''
 
     # Build the form only when we have a valid report_type

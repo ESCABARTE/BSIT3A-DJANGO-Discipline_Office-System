@@ -4,10 +4,13 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
+from django.db.models import Count
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_http_methods, require_POST
 
 from apps.scoping import scoped_infos
+from apps.discipline.models import DisciplinaryCase
+from apps.discipline.permissions import visible_cases
 
 User = get_user_model()
 
@@ -94,19 +97,48 @@ def logout_view(request):
 @login_required(login_url='login')
 def home(request):
     records = scoped_infos(request.user).order_by('-updated_at')
+    cases = visible_cases(request.user).distinct()
+    pending_statuses = (
+        DisciplinaryCase.Status.SUBMITTED,
+        DisciplinaryCase.Status.INITIAL_REVIEW,
+        DisciplinaryCase.Status.RETURNED,
+    )
+    review_statuses = (
+        DisciplinaryCase.Status.INVESTIGATION,
+        DisciplinaryCase.Status.HEARING,
+        DisciplinaryCase.Status.COMMITTEE,
+    )
+    resolved_statuses = (
+        DisciplinaryCase.Status.CLOSED,
+        DisciplinaryCase.Status.REFERRED,
+    )
     context = {
         'dashboard_role': (
             'Administrator' if request.user.is_superuser
-            else 'Staff'
+            else 'Staff / Officer' if request.user.is_staff
+            else 'User'
         ),
         'records_count': records.count(),
         'recent_records': records[:5],
+        'case_count': cases.count(),
+        'pending_cases_count': cases.filter(status__in=pending_statuses).count(),
+        'review_cases_count': cases.filter(status__in=review_statuses).count(),
+        'resolved_cases_count': cases.filter(status__in=resolved_statuses).count(),
+        'recent_cases': cases.select_related('report', 'offense_category').order_by('-opened_at')[:5],
+        'records_by_level': (
+            cases.exclude(report__respondent_year_section='')
+            .values('report__respondent_year_section')
+            .annotate(total=Count('pk', distinct=True))
+            .order_by('-total', 'report__respondent_year_section')[:5]
+        ),
     }
 
     if request.user.is_superuser:
         context.update({
             'users_count': User.objects.count(),
             'active_users_count': User.objects.filter(is_active=True).count(),
+            'staff_users_count': User.objects.filter(is_staff=True, is_superuser=False).count(),
+            'administrator_users_count': User.objects.filter(is_superuser=True).count(),
         })
     elif request.user.is_staff:
         context['office_records_count'] = records.count()

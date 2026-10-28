@@ -1,23 +1,28 @@
 {% extends "theme/base.html" %}
-{% load static %}
 {% block title %}{{ dashboard_role }} Dashboard | Discipline Office{% endblock %}
 {% block content %}
 <main class="container-xl dashboard-page">
-  <section class="dh-hero mb-4" aria-labelledby="dashboard-title">
-    <div class="dh-hero-inner d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
-      <div>
-        <div class="dh-hero-pretitle">{{ dashboard_role }} workspace</div>
-        <h1 class="dh-hero-title" id="dashboard-title">
-          Welcome{% if user.first_name %}, {{ user.first_name }}{% else %}, {{ user.username }}{% endif %}
-        </h1>
-        <p class="dh-hero-sub mb-0">
-          {% if user.is_superuser %}Manage accounts, records and all system modules.
-          {% else %}View and manage the discipline records and cases assigned to your role.{% endif %}
-        </p>
-      </div>
+  <section class="dh-hero dh-home-hero mb-4" aria-labelledby="dashboard-title">
+    <div class="dh-hero-inner">
+      <div class="dh-hero-pretitle">{{ dashboard_role }} workspace</div>
+      <h1 class="dh-hero-title" id="dashboard-title">
+        Welcome, {{ user.get_full_name|default:user.username }}
+      </h1>
+      <p class="dh-hero-sub mb-3">
+        {% if user.is_superuser %}
+          You are signed in as Administrator — you manage accounts, records and reports.
+        {% elif user.is_staff %}
+          You are signed in as Staff / Officer — access the records and cases available to your role.
+        {% else %}
+          You are signed in as a user — submit reports and view records associated with your account.
+        {% endif %}
+      </p>
       <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-accent" href="{% url 'info:info_list' %}">
-          <i class="fas fa-address-card me-2" aria-hidden="true"></i>{% if user.is_superuser %}Information Records{% else %}My Information{% endif %}
+        <a class="btn btn-accent" href="{% url 'info:info_list' %}?add=1">
+          <i class="fas fa-plus me-2" aria-hidden="true"></i>Add Record
+        </a>
+        <a class="btn btn-light text-primary" href="{% url 'info:info_list' %}">
+          <i class="fas fa-folder-open me-2" aria-hidden="true"></i>View Records
         </a>
         {% if user.is_superuser %}
         <a class="btn btn-outline-light" href="{% url 'users:user_list' %}">
@@ -28,71 +33,180 @@
     </div>
   </section>
 
-  <section aria-label="Account summary" class="row row-cards mb-4">
-    {% if user.is_superuser %}
-    <div class="col-12 col-sm-6 col-xl-4">
-      <article class="card dh-summary-card h-100">
-        <div class="card-body d-flex align-items-center gap-3">
-          <span class="dh-summary-icon dh-summary-icon-navy"><i class="fas fa-users" aria-hidden="true"></i></span>
-          <div><div class="text-secondary">Registered accounts</div><div class="h2 mb-0">{{ users_count }}</div></div>
-        </div>
-      </article>
+  <section class="row g-3 mb-4" aria-label="Discipline case statistics">
+    <div class="col-12 col-sm-6 col-xl-3">
+      <a class="dh-metric-card dh-metric-total" href="{% url 'discipline:case_list' %}">
+        <span class="dh-metric-icon"><i class="fas fa-file-lines" aria-hidden="true"></i></span>
+        <span class="dh-metric-content">
+          <span class="dh-metric-label">Total Records</span>
+          <span class="dh-metric-value">{{ case_count }}</span>
+        </span>
+        <i class="fas fa-arrow-right dh-metric-arrow" aria-hidden="true"></i>
+      </a>
     </div>
-    <div class="col-12 col-sm-6 col-xl-4">
-      <article class="card dh-summary-card h-100">
-        <div class="card-body d-flex align-items-center gap-3">
-          <span class="dh-summary-icon dh-summary-icon-green"><i class="fas fa-user-check" aria-hidden="true"></i></span>
-          <div><div class="text-secondary">Active accounts</div><div class="h2 mb-0">{{ active_users_count }}</div></div>
-        </div>
-      </article>
+    <div class="col-12 col-sm-6 col-xl-3">
+      <a class="dh-metric-card dh-metric-pending" href="{% url 'discipline:case_list' %}?status_group=pending">
+        <span class="dh-metric-icon"><i class="fas fa-hourglass-half" aria-hidden="true"></i></span>
+        <span class="dh-metric-content">
+          <span class="dh-metric-label">Pending Cases</span>
+          <span class="dh-metric-value">{{ pending_cases_count }}</span>
+        </span>
+        <i class="fas fa-arrow-right dh-metric-arrow" aria-hidden="true"></i>
+      </a>
     </div>
-    {% endif %}
-    <div class="col-12 col-sm-6 col-xl-4">
-      <article class="card dh-summary-card h-100">
-        <div class="card-body d-flex align-items-center gap-3">
-          <span class="dh-summary-icon dh-summary-icon-gold"><i class="fas fa-folder-open" aria-hidden="true"></i></span>
-          <div><div class="text-secondary">{% if user.is_superuser %}Accessible information records{% elif user.is_staff %}Office information records{% else %}My information records{% endif %}</div><div class="h2 mb-0">{{ records_count }}</div></div>
-        </div>
-      </article>
+    <div class="col-12 col-sm-6 col-xl-3">
+      <a class="dh-metric-card dh-metric-review" href="{% url 'discipline:case_list' %}?status_group=review">
+        <span class="dh-metric-icon"><i class="fas fa-magnifying-glass" aria-hidden="true"></i></span>
+        <span class="dh-metric-content">
+          <span class="dh-metric-label">Under Review</span>
+          <span class="dh-metric-value">{{ review_cases_count }}</span>
+        </span>
+        <i class="fas fa-arrow-right dh-metric-arrow" aria-hidden="true"></i>
+      </a>
+    </div>
+    <div class="col-12 col-sm-6 col-xl-3">
+      <a class="dh-metric-card dh-metric-resolved" href="{% url 'discipline:case_list' %}?status_group=resolved">
+        <span class="dh-metric-icon"><i class="fas fa-circle-check" aria-hidden="true"></i></span>
+        <span class="dh-metric-content">
+          <span class="dh-metric-label">Resolved Cases</span>
+          <span class="dh-metric-value">{{ resolved_cases_count }}</span>
+        </span>
+        <i class="fas fa-arrow-right dh-metric-arrow" aria-hidden="true"></i>
+      </a>
     </div>
   </section>
 
-  <section class="card dh-records-card" aria-labelledby="recent-records-title">
-    <div class="card-header d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2">
-      <div>
-        <h2 class="card-title mb-1" id="recent-records-title">Recently updated records</h2>
-        <p class="text-secondary small mb-0">{% if user.is_superuser or user.is_staff %}Recent records visible to your office role.{% else %}Only information associated with your account is shown.{% endif %}</p>
-      </div>
-      <a href="{% url 'info:info_list' %}" class="btn btn-outline-primary btn-sm">View all records</a>
+  <section class="row g-3">
+    <div class="col-12 col-lg-8">
+      <article class="card dh-records-card h-100" aria-labelledby="recent-cases-title">
+        <div class="card-header d-flex align-items-center justify-content-between gap-2">
+          <h2 class="card-title mb-0" id="recent-cases-title">
+            <i class="fas fa-clock-rotate-left me-2 text-primary" aria-hidden="true"></i>{% if user.is_superuser or user.is_staff %}Recent Discipline Records{% else %}Recently Updated Information Records{% endif %}
+          </h2>
+          <a href="{% if user.is_superuser or user.is_staff %}{% url 'discipline:case_list' %}{% else %}{% url 'info:info_list' %}{% endif %}" class="btn btn-outline-primary btn-sm">View all</a>
+        </div>
+        <div class="table-responsive">
+          {% if user.is_superuser or user.is_staff %}
+          <table class="table table-vcenter table-hover card-table">
+            <thead>
+              <tr>
+                <th>Student ID</th>
+                <th>Name</th>
+                <th>Level</th>
+                <th>Violation</th>
+                <th>Date</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for case in recent_cases %}
+              <tr>
+                <td class="font-monospace">{{ case.report.respondent_student_id|default:"—" }}</td>
+                <td>
+                  <a class="fw-semibold text-reset text-decoration-none" href="{% url 'discipline:case_detail' case.pk %}">
+                    {{ case.report.respondent_name|default:"—" }}
+                  </a>
+                </td>
+                <td>{{ case.report.respondent_year_section|default:case.report.respondent_program|default:"—" }}</td>
+                <td>{{ case.offense_category.name|default:case.offense_description|default:"—"|truncatechars:36 }}</td>
+                <td class="text-secondary text-nowrap">{{ case.opened_at|date:"M j, Y" }}</td>
+                <td>
+                  <span class="badge
+                    {% if case.status == 'submitted' or case.status == 'initial_review' or case.status == 'returned' %}bg-yellow-lt
+                    {% elif case.status == 'closed' or case.status == 'referred' %}bg-success-lt
+                    {% else %}bg-azure-lt{% endif %}">
+                    {{ case.get_status_display }}
+                  </span>
+                </td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="6">
+                  <div class="empty py-4">
+                    <div class="empty-icon"><i class="fas fa-folder-open" aria-hidden="true"></i></div>
+                    <p class="empty-title">No discipline records yet</p>
+                    <p class="empty-subtitle">Cases you are authorized to view will appear here.</p>
+                    <div class="empty-action">
+                      <a href="{% url 'discipline:intake' %}" class="btn btn-primary">
+                        <i class="fas fa-plus me-2" aria-hidden="true"></i>Start an intake
+                      </a>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <table class="table table-vcenter table-hover card-table">
+            <thead>
+              <tr><th>Name</th><th>Age</th><th>Last updated</th></tr>
+            </thead>
+            <tbody>
+              {% for record in recent_records %}
+              <tr>
+                <td class="fw-semibold">{{ record.name }}</td>
+                <td>{{ record.age }}</td>
+                <td class="text-secondary">{{ record.updated_at|date:"M j, Y" }}</td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="3">
+                  <div class="empty py-4">
+                    <div class="empty-icon"><i class="fas fa-address-card" aria-hidden="true"></i></div>
+                    <p class="empty-title">No information records yet</p>
+                    <p class="empty-subtitle">Information associated with your account will appear here.</p>
+                    <div class="empty-action"><a href="{% url 'info:info_list' %}" class="btn btn-primary">View Information Records</a></div>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+        </div>
+      </article>
     </div>
-    <div class="table-responsive">
-      <table class="table table-vcenter card-table">
-        <thead>
-          <tr><th>Name</th><th>Age</th><th>Last updated</th></tr>
-        </thead>
-        <tbody>
-          {% for record in recent_records %}
-          <tr>
-            <td class="fw-semibold">{{ record.name }}</td>
-            <td>{{ record.age }}</td>
-            <td class="text-secondary">{{ record.updated_at|date:"M j, Y" }}</td>
-          </tr>
-          {% empty %}
-          <tr>
-            <td colspan="3">
-              <div class="empty py-4">
-                <div class="empty-icon"><i class="fas fa-folder-open" aria-hidden="true"></i></div>
-                <p class="empty-title">No records yet</p>
-                <p class="empty-subtitle">{% if user.is_superuser or user.is_staff %}Office information records will appear here.{% else %}Information associated with your account will appear here.{% endif %}</p>
-                <div class="empty-action">
-                  <a href="{% url 'info:info_list' %}" class="btn btn-primary">View Information Records</a>
-                </div>
-              </div>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+
+    <div class="col-12 col-lg-4">
+      <div class="d-flex flex-column gap-3 h-100">
+        <article class="card dh-side-panel" aria-labelledby="level-summary-title">
+          <div class="card-header">
+            <h2 class="card-title mb-0" id="level-summary-title">
+              <i class="fas fa-graduation-cap me-2 text-primary" aria-hidden="true"></i>Records by Educational Level
+            </h2>
+          </div>
+          <div class="card-body">
+            {% for level in records_by_level %}
+            <div class="d-flex justify-content-between align-items-center py-2 {% if not forloop.last %}border-bottom{% endif %}">
+              <span class="text-secondary">{{ level.report__respondent_year_section }}</span>
+              <span class="badge bg-secondary-lt">{{ level.total }}</span>
+            </div>
+            {% empty %}
+            <p class="text-secondary mb-0">No records with an educational level yet</p>
+            {% endfor %}
+          </div>
+        </article>
+
+        <article class="card dh-side-panel flex-fill" aria-labelledby="account-summary-title">
+          <div class="card-header">
+            <h2 class="card-title mb-0" id="account-summary-title">
+              <i class="fas fa-users me-2 text-primary" aria-hidden="true"></i>Account Summary
+            </h2>
+          </div>
+          <div class="card-body">
+            {% if user.is_superuser %}
+            <div class="dh-account-stat"><i class="fas fa-users" aria-hidden="true"></i><span>Total users</span><strong>{{ users_count }}</strong></div>
+            <div class="dh-account-stat"><i class="fas fa-user-check" aria-hidden="true"></i><span>Active</span><strong>{{ active_users_count }}</strong></div>
+            <div class="dh-account-stat"><i class="fas fa-user-tie" aria-hidden="true"></i><span>Staff / Officers</span><strong>{{ staff_users_count }}</strong></div>
+            <div class="dh-account-stat"><i class="fas fa-user-shield" aria-hidden="true"></i><span>Administrators</span><strong>{{ administrator_users_count }}</strong></div>
+            {% else %}
+            <div class="dh-account-stat"><i class="fas fa-folder-open" aria-hidden="true"></i><span>Cases visible to you</span><strong>{{ case_count }}</strong></div>
+            <div class="dh-account-stat"><i class="fas fa-user" aria-hidden="true"></i><span>Account</span><strong>{{ user.username }}</strong></div>
+            {% endif %}
+          </div>
+        </article>
+      </div>
     </div>
   </section>
 </main>

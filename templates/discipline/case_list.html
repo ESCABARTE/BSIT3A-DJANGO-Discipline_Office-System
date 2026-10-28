@@ -80,7 +80,11 @@
   <div class="card">
     <div class="card-header d-flex align-items-center">
       <h2 class="card-title mb-0">
-        {% if status_group == 'submitted' %}
+        {% if status_group == 'pending' %}
+          Pending cases
+        {% elif status_group == 'resolved' %}
+          Resolved cases
+        {% elif status_group == 'submitted' %}
           Submitted intake
         {% elif status_group == 'review' %}
           Investigation &amp; review

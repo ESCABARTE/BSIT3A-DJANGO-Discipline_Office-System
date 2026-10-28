@@ -8,7 +8,7 @@
   'use strict';
 
   /* ── State ──────────────────────────────────────────────── */
-  let currentType = '{{ report_type|escapejs }}';   // pre-set on page load
+  let currentType = '{{ report_type|escapejs }}';
 
   /* ── DOM refs (resolved after DOMContentLoaded) ──────────── */
   const $ = id => document.getElementById(id);
@@ -16,33 +16,17 @@
   /* ── Sections ────────────────────────────────────────────── */
   function showType(type) {
     currentType = type;
+    const typeSelect = $('report_type');
+    if (typeSelect) typeSelect.value = type;
+    const typeTitle = $('report-type-title');
+    if (typeTitle) typeTitle.textContent = type === 'incident' ? 'Incident report details' : 'Written complaint details';
 
-    // Card selection highlight
-    document.querySelectorAll('.intake-type-card').forEach(c => {
-      c.classList.toggle('intake-type-card--selected', c.dataset.type === type);
-    });
-
-    // Hidden radio keeps the value for the POST body
-    const radio = document.querySelector(`input[name="report_type"][value="${type}"]`);
-    if (radio) radio.checked = true;
-
-    // Show/hide blocks
     $('section-complainant').style.display = type === 'complaint' ? '' : 'none';
     $('section-officer').style.display     = type === 'incident'  ? '' : 'none';
-    $('section-form').style.display        = type              ? '' : 'none';
+    $('section-form').style.display        = '';
 
-    // Sync required attributes for accessibility / HTML5 validation
     syncRequired(type);
-
-    // Update submit button labels
     updateButtons(type);
-
-    // Scroll form into view gently
-    if (type) {
-      setTimeout(() => {
-        $('section-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 80);
-    }
   }
 
   function syncRequired(type) {
@@ -103,15 +87,9 @@
 
   /* ── Init ────────────────────────────────────────────────── */
   document.addEventListener('DOMContentLoaded', function () {
-    // Card click
-    document.querySelectorAll('.intake-type-card').forEach(card => {
-      card.addEventListener('click', () => showType(card.dataset.type));
-      card.addEventListener('keydown', e => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showType(card.dataset.type); }
-      });
-    });
+    const typeSelect = $('report_type');
+    if (typeSelect) typeSelect.addEventListener('change', () => showType(typeSelect.value));
 
-    // Form submit
     const form = $('intake-form');
     if (form) {
       form.addEventListener('submit', function (e) {
@@ -120,7 +98,6 @@
       });
     }
 
-    // Pre-select from URL param or server-side state
     if (currentType) showType(currentType);
   });
 })();
@@ -151,8 +128,8 @@
   </div>
 
   {# ── Info banner ─────────────────────────────────────────── #}
-  <div class="alert alert-info d-flex gap-3 align-items-start mb-4" role="note">
-    <i class="fas fa-shield-halved fs-4 mt-1 flex-shrink-0" aria-hidden="true"></i>
+  <div class="alert dh-privacy-notice d-flex gap-3 align-items-start mb-4" role="note">
+    <i class="fas fa-circle-info fs-4 mt-1 flex-shrink-0" aria-hidden="true"></i>
     <div>
       <strong>Privacy &amp; accuracy notice:</strong> Only submit information you are authorised
       to share. All submissions are reviewed by authorised personnel before any action is taken.
@@ -163,64 +140,7 @@
   {# ── Server-side errors ──────────────────────────────────── #}
   {% include 'theme/messages.html' %}
 
-  {# ── Step 1 — Report-type selector cards ─────────────────── #}
-  <section class="intake-section mb-4" aria-labelledby="step-type-heading">
-    <h2 class="intake-section-title" id="step-type-heading">
-      <span class="intake-step-badge">1</span> Select report type
-      <span class="text-danger ms-1" aria-hidden="true">*</span>
-    </h2>
-    <div class="row g-3">
-      {# Written Complaint card #}
-      <div class="col-12 col-md-6">
-        <div
-          class="intake-type-card{% if report_type == 'complaint' %} intake-type-card--selected{% endif %}"
-          data-type="complaint"
-          role="radio"
-          aria-checked="{% if report_type == 'complaint' %}true{% else %}false{% endif %}"
-          tabindex="0"
-          aria-label="Written Complaint"
-        >
-          <span class="intake-type-icon intake-type-icon--complaint" aria-hidden="true">
-            <i class="fas fa-file-lines"></i>
-          </span>
-          <div class="intake-type-body">
-            <div class="intake-type-title">Written Complaint</div>
-            <div class="intake-type-desc">
-              Submit a formal complaint about an incident or violation of school rules.
-              For use by students, parents, or authorised parties.
-            </div>
-          </div>
-          <span class="intake-type-check" aria-hidden="true"><i class="fas fa-circle-check"></i></span>
-        </div>
-      </div>
-      {# Incident Report card #}
-      <div class="col-12 col-md-6">
-        <div
-          class="intake-type-card{% if report_type == 'incident' %} intake-type-card--selected{% endif %}{% if not can_file_incident %} intake-type-card--disabled{% endif %}"
-          data-type="incident"
-          role="radio"
-          aria-checked="{% if report_type == 'incident' %}true{% else %}false{% endif %}"
-          tabindex="{% if can_file_incident %}0{% else %}-1{% endif %}"
-          aria-label="Incident Report{% if not can_file_incident %} (restricted to authorised school officials){% endif %}"
-          {% if not can_file_incident %}aria-disabled="true"{% endif %}
-        >
-          <span class="intake-type-icon intake-type-icon--incident" aria-hidden="true">
-            <i class="fas fa-clipboard-list"></i>
-          </span>
-          <div class="intake-type-body">
-            <div class="intake-type-title">Incident Report</div>
-            <div class="intake-type-desc">
-              Document an incident observed or reported by school personnel or an authorised official.
-              {% if not can_file_incident %}<span class="badge bg-secondary-lt ms-1">Officials only</span>{% endif %}
-            </div>
-          </div>
-          <span class="intake-type-check" aria-hidden="true"><i class="fas fa-circle-check"></i></span>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  {# ── Intake form (shown only after a type is selected) ────── #}
+  {# ── Unified intake form ──────────────────────────────────── #}
   <form
     id="intake-form"
     method="post"
@@ -229,13 +149,30 @@
     aria-label="Discipline Office intake form"
   >
     {% csrf_token %}
-    {# Hidden radio group — value sent with POST #}
-    <div hidden aria-hidden="true">
-      <input type="radio" name="report_type" value="complaint" {% if report_type == 'complaint' %}checked{% endif %}>
-      <input type="radio" name="report_type" value="incident"  {% if report_type == 'incident'  %}checked{% endif %}>
-    </div>
-
-    <div id="section-form" {% if not report_type %}style="display:none"{% endif %}>
+    <div id="section-form">
+      <section class="intake-section mb-4" aria-labelledby="step-type-heading">
+        <h2 class="intake-section-title" id="step-type-heading">
+          <span class="intake-step-badge">1</span> <span id="report-type-title">{% if report_type == 'incident' %}Incident report details{% else %}Written complaint details{% endif %}</span>
+        </h2>
+        <div class="card">
+          <div class="card-body">
+            <label class="form-label" for="report_type">Submission type</label>
+            <select class="form-select" id="report_type" name="report_type" aria-describedby="report-type-hint">
+              <option value="complaint" {% if report_type == 'complaint' %}selected{% endif %}>Written Complaint</option>
+              {% if can_file_incident %}
+              <option value="incident" {% if report_type == 'incident' %}selected{% endif %}>Incident Report</option>
+              {% endif %}
+            </select>
+            <div class="form-hint" id="report-type-hint">
+              {% if can_file_incident %}
+                Choose the submission type; the relevant details are shown in this same form.
+              {% else %}
+                Written complaints are submitted for review by the Discipline Office.
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {# ── Step 2 — Complainant / Reporting Person ───────────── #}
 
@@ -330,7 +267,7 @@
                   id="id_reporter_name_display"
                   class="form-control"
                   value="{{ request.user.get_full_name|default:request.user.username }}"
-                  disabled
+                  readonly
                   aria-describedby="reporter-name-hint"
                 >
                 <div id="reporter-name-hint" class="form-hint">Automatically set to your account name.</div>

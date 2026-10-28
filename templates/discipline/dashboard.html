@@ -2,13 +2,26 @@
 {% block title %}Discipline Dashboard{% endblock %}
 {% block content %}
 <main class="container-xl">
-  <header class="mb-4">
-    <div class="page-pretitle">Case management overview</div>
-    <h1 class="page-title mb-0">Discipline Dashboard</h1>
-  </header>
+  <div class="dh-hero mb-4">
+    <div class="dh-hero-inner d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+      <div>
+        <div class="dh-hero-pretitle">Case management overview</div>
+        <h1 class="dh-hero-title mb-1">Discipline Dashboard</h1>
+        <p class="dh-hero-sub mb-0">Monitor active cases, submissions, and pending decisions with a single operational view.</p>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-accent" href="{% url 'discipline:intake' %}">
+          <i class="fas fa-plus me-2" aria-hidden="true"></i>New Intake
+        </a>
+        <a class="btn btn-light text-primary" href="{% url 'discipline:case_list' %}">
+          <i class="fas fa-eye me-2" aria-hidden="true"></i>View Cases
+        </a>
+      </div>
+    </div>
+  </div>
 
-  <section class="row g-3" aria-label="Case management shortcuts">
-    <div class="col-12 col-md-6">
+  <section class="row g-3 mb-4" aria-label="Case management shortcuts">
+    <div class="col-12 col-md-6 col-xl-3">
       <a class="card dh-dashboard-card h-100" href="{% url 'discipline:case_list' %}">
         <span class="dh-dashboard-icon"><i class="fas fa-folder-open" aria-hidden="true"></i></span>
         <span class="dh-dashboard-copy">
@@ -19,18 +32,18 @@
         <i class="fas fa-arrow-right dh-dashboard-arrow" aria-hidden="true"></i>
       </a>
     </div>
-    <div class="col-12 col-md-6">
+    <div class="col-12 col-md-6 col-xl-3">
       <a class="card dh-dashboard-card h-100" href="{% url 'discipline:case_list' %}?status_group=submitted">
         <span class="dh-dashboard-icon"><i class="fas fa-inbox" aria-hidden="true"></i></span>
         <span class="dh-dashboard-copy">
           <span class="dh-dashboard-label">Submitted Intake</span>
           <span class="dh-dashboard-count">{{ submitted_count }}</span>
-          <span class="dh-dashboard-description">New submissions awaiting initial review</span>
+          <span class="dh-dashboard-description">New submissions</span>
         </span>
         <i class="fas fa-arrow-right dh-dashboard-arrow" aria-hidden="true"></i>
       </a>
     </div>
-    <div class="col-12 col-md-6">
+    <div class="col-12 col-md-6 col-xl-3">
       <a class="card dh-dashboard-card h-100" href="{% url 'discipline:case_list' %}?status_group=review">
         <span class="dh-dashboard-icon"><i class="fas fa-magnifying-glass" aria-hidden="true"></i></span>
         <span class="dh-dashboard-copy">
@@ -41,16 +54,72 @@
         <i class="fas fa-arrow-right dh-dashboard-arrow" aria-hidden="true"></i>
       </a>
     </div>
-    <div class="col-12 col-md-6">
+    <div class="col-12 col-md-6 col-xl-3">
       <a class="card dh-dashboard-card h-100" href="{% url 'discipline:case_list' %}?status_group=decision">
         <span class="dh-dashboard-icon"><i class="fas fa-scale-balanced" aria-hidden="true"></i></span>
         <span class="dh-dashboard-copy">
           <span class="dh-dashboard-label">Awaiting Decision</span>
           <span class="dh-dashboard-count">{{ decision_count }}</span>
-          <span class="dh-dashboard-description">Pending authorized decision</span>
+          <span class="dh-dashboard-description">Pending decisions</span>
         </span>
         <i class="fas fa-arrow-right dh-dashboard-arrow" aria-hidden="true"></i>
       </a>
+    </div>
+  </section>
+
+  <section class="row g-3">
+    <div class="col-12 col-lg-8">
+      <div class="card h-100">
+        <div class="card-header d-flex align-items-center justify-content-between">
+          <h2 class="card-title mb-0">Priority Cases</h2>
+          <a href="{% url 'discipline:case_list' %}" class="text-decoration-none small fw-semibold">View all</a>
+        </div>
+        <div class="card-body">
+          <div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-3">
+            <span class="text-secondary small fw-semibold text-uppercase">Status</span>
+            <span class="text-secondary small fw-semibold text-uppercase">Count</span>
+          </div>
+          <div class="d-flex align-items-center justify-content-between py-2">
+            <a href="{% url 'discipline:case_list' %}?status_group=submitted" class="text-decoration-none text-reset">Submitted Intake</a>
+            <span class="badge bg-warning-subtle text-warning-emphasis px-2 py-1">{{ submitted_count }}</span>
+          </div>
+          <div class="d-flex align-items-center justify-content-between py-2">
+            <a href="{% url 'discipline:case_list' %}?status_group=review" class="text-decoration-none text-reset">Investigation &amp; Review</a>
+            <span class="badge bg-info-subtle text-info-emphasis px-2 py-1">{{ review_count }}</span>
+          </div>
+          <div class="d-flex align-items-center justify-content-between py-2">
+            <a href="{% url 'discipline:case_list' %}?status_group=decision" class="text-decoration-none text-reset">Awaiting Decision</a>
+            <span class="badge bg-success-subtle text-success-emphasis px-2 py-1">{{ decision_count }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-4">
+      <div class="card h-100">
+        <div class="card-header d-flex align-items-center justify-content-between">
+          <h2 class="card-title mb-0">Case Snapshot</h2>
+          <i class="fas fa-chart-column text-muted" aria-hidden="true"></i>
+        </div>
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+            <span class="text-secondary">Registered cases</span>
+            <span class="fw-bold">{{ cases_total }}</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+            <span class="text-secondary">Need initial review</span>
+            <span class="fw-bold text-warning">{{ submitted_count }}</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+            <span class="text-secondary">Under review</span>
+            <span class="fw-bold text-info">{{ review_count }}</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-center py-2">
+            <span class="text-secondary">Awaiting decision</span>
+            <span class="fw-bold text-success">{{ decision_count }}</span>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 </main>

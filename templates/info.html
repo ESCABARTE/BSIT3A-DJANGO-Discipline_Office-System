@@ -298,6 +298,10 @@
       }
     });
   });
+
+  if (new URLSearchParams(window.location.search).get('add') === '1') {
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  }
 })();
 </script>
 {% endblock %}
