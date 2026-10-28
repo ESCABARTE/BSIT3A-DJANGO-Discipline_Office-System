@@ -1,5 +1,3 @@
-from datetime import timedelta
-
 from django.contrib import messages
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.contrib.auth.decorators import login_required
@@ -7,50 +5,13 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.shortcuts import redirect, render
-from django.utils import timezone
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 
 from apps.scoping import scoped_infos
 
 User = get_user_model()
 
-MAX_FAILED_ATTEMPTS = 5
-LOCK_DURATION = timedelta(minutes=1)
 INVALID_LOGIN_MESSAGE = 'Invalid username or password.'
-LOCKED_MESSAGE = 'Too many failed attempts. Locked for 1 minute.'
-
-
-def _reset_lock_state(request):
-    request.session['failed_attempts'] = 0
-    request.session['lock_time'] = None
-
-
-def _get_lock_state(request):
-    failed_attempts = request.session.get('failed_attempts', 0)
-    lock_time = request.session.get('lock_time')
-
-    if not lock_time:
-        return failed_attempts, None
-
-    try:
-        unlock_time = timezone.datetime.fromisoformat(lock_time)
-    except (TypeError, ValueError):
-        _reset_lock_state(request)
-        return 0, None
-
-    if timezone.now() < unlock_time:
-        remaining = int((unlock_time - timezone.now()).total_seconds())
-        return failed_attempts, remaining
-
-    _reset_lock_state(request)
-    return 0, None
-
-
-def _set_lock_state(request):
-    lock_until = timezone.now() + LOCK_DURATION
-    request.session['failed_attempts'] = MAX_FAILED_ATTEMPTS
-    request.session['lock_time'] = lock_until.isoformat()
-    return int(LOCK_DURATION.total_seconds())
 
 
 def _validate_registration_data(data):
@@ -106,10 +67,8 @@ def login_view(request):
     if request.user.is_authenticated:
         return redirect('dashboard')
 
-    failed_attempts, remaining = _get_lock_state(request)
-    if remaining is not None:
-        messages.error(request, f'Too many failed attempts. Try again in {remaining} seconds.')
-        return render(request, 'auth/login.html', {'locked': True, 'remaining': remaining})
+    request.session.pop('failed_attempts', None)
+    request.session.pop('lock_time', None)
 
     if request.method == 'GET':
         return render(request, 'auth/login.html')
@@ -119,22 +78,14 @@ def login_view(request):
     user = authenticate(request, username=username, password=password)
 
     if user is not None:
-        _reset_lock_state(request)
         login(request, user)
         return redirect('dashboard')
 
-    failed_attempts += 1
-    request.session['failed_attempts'] = failed_attempts
-    if failed_attempts >= MAX_FAILED_ATTEMPTS:
-        remaining = _set_lock_state(request)
-        messages.error(request, LOCKED_MESSAGE)
-        return render(request, 'auth/login.html', {'locked': True, 'remaining': remaining})
-
-    remaining_attempts = MAX_FAILED_ATTEMPTS - failed_attempts
-    messages.error(request, f'{INVALID_LOGIN_MESSAGE} {remaining_attempts} attempts remaining.')
+    messages.error(request, INVALID_LOGIN_MESSAGE)
     return render(request, 'auth/login.html')
 
 
+@require_POST
 def logout_view(request):
     logout(request)
     return redirect('login')
@@ -146,8 +97,7 @@ def home(request):
     context = {
         'dashboard_role': (
             'Administrator' if request.user.is_superuser
-            else 'Staff / Officer' if request.user.is_staff
-            else 'User'
+            else 'Staff'
         ),
         'records_count': records.count(),
         'recent_records': records[:5],
@@ -158,6 +108,8 @@ def home(request):
             'users_count': User.objects.count(),
             'active_users_count': User.objects.filter(is_active=True).count(),
         })
+    elif request.user.is_staff:
+        context['office_records_count'] = records.count()
 
     return render(request, 'home.html', context)
 
@@ -189,6 +141,8 @@ def register_view(request):
         last_name=form_data['last_name'].strip(),
         email=form_data['email'].strip(),
         password=form_data['password'],
+        is_staff=True,       # All self-registered accounts are Staff by default
+        is_superuser=False,  # Public registration never grants Admin
     )
     login(request, user)
     return redirect('dashboard')

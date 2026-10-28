@@ -36,6 +36,19 @@ class HomeViewTests(TestCase):
         self.assertContains(response, 'Member record')
         self.assertNotContains(response, 'Private record')
 
+    def test_staff_dashboard_shows_office_role_and_real_record_count(self):
+        staff = get_user_model().objects.create_user(
+            username='officer', password='secret1234', is_staff=True
+        )
+        Info.objects.create(name='Office record', age=30, address='Office')
+
+        self.client.force_login(staff)
+        response = self.client.get(reverse('dashboard'))
+
+        self.assertEqual(response.context['dashboard_role'], 'Staff / Officer')
+        self.assertEqual(response.context['records_count'], 1)
+        self.assertEqual(response.context['office_records_count'], 1)
+
     def test_administrator_dashboard_uses_real_account_counts(self):
         user_model = get_user_model()
         admin = user_model.objects.create_superuser(username='admin', password='secret1234')
@@ -55,3 +68,21 @@ class HomeViewTests(TestCase):
         response = self.client.get(reverse('dashboard'))
 
         self.assertEqual(response.status_code, 302)
+
+    def test_logout_requires_post(self):
+        user = get_user_model().objects.create_user(username='member', password='secret1234')
+        self.client.force_login(user)
+
+        response = self.client.get(reverse('logout'))
+
+        self.assertEqual(response.status_code, 405)
+        self.assertTrue(response.wsgi_request.user.is_authenticated)
+
+    def test_logout_ends_session_with_post(self):
+        user = get_user_model().objects.create_user(username='member', password='secret1234')
+        self.client.force_login(user)
+
+        response = self.client.post(reverse('logout'))
+
+        self.assertRedirects(response, reverse('login'))
+        self.assertNotIn('_auth_user_id', self.client.session)

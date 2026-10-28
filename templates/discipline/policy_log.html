@@ -1,0 +1,182 @@
+{% extends "theme/base.html" %}
+{% block title %}Policy Log | Discipline Office{% endblock %}
+{% block content %}
+<main class="container-xl">
+
+  <nav aria-label="breadcrumb" class="mb-2">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{% url 'discipline:dashboard' %}">Dashboard</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'discipline:policy_list' %}">Policy Catalog</a></li>
+      <li class="breadcrumb-item active" aria-current="page">Policy Log</li>
+    </ol>
+  </nav>
+
+  <div class="page-header mb-4">
+    <div>
+      <div class="page-pretitle">Policy Management</div>
+      <h1 class="page-title mb-1">Policy Log</h1>
+      <p class="text-secondary mb-0">
+        History of policy entries — additions, edits, version changes, and status updates.
+        Ordered by most recently updated.
+      </p>
+    </div>
+    {% if can_edit %}
+    <div class="ms-auto">
+      <a class="btn btn-accent policy-add-btn" href="{% url 'discipline:policy_create' %}">
+        <i class="fas fa-plus me-2" aria-hidden="true"></i>Add New Policy
+      </a>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Search & filter ─────────────────────────────────── #}
+  <div class="card mb-4">
+    <div class="card-body">
+      <form method="get" role="search" aria-label="Search policy log">
+        <div class="row g-2 align-items-end">
+          <div class="col-12 col-md-5">
+            <label class="form-label" for="pl-search">Search</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="fas fa-search" aria-hidden="true"></i></span>
+              <input id="pl-search" type="search" name="q" value="{{ query }}"
+                     class="form-control" placeholder="Policy name, reference, or version…">
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label" for="pl-show">Status</label>
+            <select id="pl-show" name="show" class="form-select">
+              <option value="all"      {% if show == 'all'      %}selected{% endif %}>All statuses</option>
+              <option value="active"   {% if show == 'active'   %}selected{% endif %}>Active only</option>
+              <option value="inactive" {% if show == 'inactive' %}selected{% endif %}>Inactive only</option>
+            </select>
+          </div>
+          <div class="col-6 col-md-4 d-flex gap-2">
+            <button type="submit" class="btn btn-primary flex-fill">
+              <i class="fas fa-filter me-1" aria-hidden="true"></i>Filter
+            </button>
+            {% if query or show != 'all' %}
+            <a href="{% url 'discipline:policy_log' %}" class="btn btn-outline-secondary" title="Clear">
+              <i class="fas fa-times" aria-hidden="true"></i>
+            </a>
+            {% endif %}
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# ── Table ─────────────────────────────────────────── #}
+  <div class="card">
+    <div class="card-header d-flex align-items-center">
+      <h2 class="card-title mb-0">Policy entries</h2>
+      <span class="ms-2 badge bg-secondary-lt">{{ policies.paginator.count }}</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-vcenter table-hover card-table">
+        <thead>
+          <tr>
+            <th>Policy Title</th>
+            <th>Category</th>
+            <th>Reference</th>
+            <th>Version</th>
+            <th>Status</th>
+            <th>Last Updated</th>
+            <th>Created</th>
+            <th class="w-1">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pol in policies %}
+          <tr>
+            <td class="fw-semibold">{{ pol.name }}</td>
+            <td>
+              <span class="badge policy-badge-category">{{ pol.get_classification_display }}</span>
+            </td>
+            <td class="text-secondary font-monospace small">{{ pol.policy_reference|default:"—" }}</td>
+            <td class="text-secondary small">{{ pol.policy_version }}</td>
+            <td>
+              {% if pol.active %}
+              <span class="badge policy-badge-active">
+                <i class="fas fa-circle-check me-1" aria-hidden="true"></i>Active
+              </span>
+              {% else %}
+              <span class="badge policy-badge-inactive">
+                <i class="fas fa-circle-pause me-1" aria-hidden="true"></i>Inactive
+              </span>
+              {% endif %}
+            </td>
+            <td class="text-secondary small">{{ pol.updated_at|date:"M j, Y, g:i A" }}</td>
+            <td class="text-secondary small">{{ pol.created_at|date:"M j, Y" }}</td>
+            <td>
+              <div class="d-flex gap-1">
+                <a class="btn btn-sm btn-outline-primary"
+                   href="{% url 'discipline:policy_detail' pol.pk %}">
+                  <i class="fas fa-eye" aria-hidden="true"></i>
+                </a>
+                {% if can_edit %}
+                <a class="btn btn-sm btn-outline-secondary"
+                   href="{% url 'discipline:policy_edit' pol.pk %}">
+                  <i class="fas fa-pencil" aria-hidden="true"></i>
+                </a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8">
+              <div class="empty py-5">
+                <div class="empty-icon">
+                  <i class="fas fa-book fa-2x text-muted" aria-hidden="true"></i>
+                </div>
+                <p class="empty-title">No policy entries found</p>
+                <p class="empty-subtitle">
+                  {% if query or show != 'all' %}
+                    Try adjusting your search or filter.
+                    <a href="{% url 'discipline:policy_log' %}">Clear filters</a>
+                  {% else %}
+                    No policy entries have been created yet.
+                  {% endif %}
+                </p>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if policies.paginator.num_pages > 1 %}
+    <div class="card-footer d-flex flex-wrap align-items-center gap-2">
+      <p class="m-0 text-muted small">
+        Showing {{ policies.start_index }}–{{ policies.end_index }} of {{ policies.paginator.count }}
+      </p>
+      <nav class="ms-auto" aria-label="Policy log pages">
+        <ul class="pagination mb-0">
+          {% if policies.has_previous %}
+          <li class="page-item">
+            <a class="page-link" href="?page={{ policies.previous_page_number }}&q={{ query|urlencode }}&show={{ show }}">
+              <i class="fas fa-chevron-left" aria-hidden="true"></i>
+            </a>
+          </li>
+          {% endif %}
+          {% for num in policies.paginator.page_range %}
+          <li class="page-item {% if policies.number == num %}active{% endif %}">
+            <a class="page-link" href="?page={{ num }}&q={{ query|urlencode }}&show={{ show }}">{{ num }}</a>
+          </li>
+          {% endfor %}
+          {% if policies.has_next %}
+          <li class="page-item">
+            <a class="page-link" href="?page={{ policies.next_page_number }}&q={{ query|urlencode }}&show={{ show }}">
+              <i class="fas fa-chevron-right" aria-hidden="true"></i>
+            </a>
+          </li>
+          {% endif %}
+        </ul>
+      </nav>
+    </div>
+    {% endif %}
+  </div>
+
+</main>
+{% endblock %}

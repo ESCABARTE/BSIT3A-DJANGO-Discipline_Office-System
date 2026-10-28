@@ -1,0 +1,57 @@
+{% extends "theme/base.html" %}
+{% block title %}Discipline Dashboard{% endblock %}
+{% block content %}
+<main class="container-xl">
+  <header class="mb-4">
+    <div class="page-pretitle">Case management overview</div>
+    <h1 class="page-title mb-0">Discipline Dashboard</h1>
+  </header>
+
+  <section class="row g-3" aria-label="Case management shortcuts">
+    <div class="col-12 col-md-6">
+      <a class="card dh-dashboard-card h-100" href="{% url 'discipline:case_list' %}">
+        <span class="dh-dashboard-icon"><i class="fas fa-folder-open" aria-hidden="true"></i></span>
+        <span class="dh-dashboard-copy">
+          <span class="dh-dashboard-label">Total Cases</span>
+          <span class="dh-dashboard-count">{{ cases_total }}</span>
+          <span class="dh-dashboard-description">All registered cases</span>
+        </span>
+        <i class="fas fa-arrow-right dh-dashboard-arrow" aria-hidden="true"></i>
+      </a>
+    </div>
+    <div class="col-12 col-md-6">
+      <a class="card dh-dashboard-card h-100" href="{% url 'discipline:case_list' %}?status_group=submitted">
+        <span class="dh-dashboard-icon"><i class="fas fa-inbox" aria-hidden="true"></i></span>
+        <span class="dh-dashboard-copy">
+          <span class="dh-dashboard-label">Submitted Intake</span>
+          <span class="dh-dashboard-count">{{ submitted_count }}</span>
+          <span class="dh-dashboard-description">New submissions awaiting initial review</span>
+        </span>
+        <i class="fas fa-arrow-right dh-dashboard-arrow" aria-hidden="true"></i>
+      </a>
+    </div>
+    <div class="col-12 col-md-6">
+      <a class="card dh-dashboard-card h-100" href="{% url 'discipline:case_list' %}?status_group=review">
+        <span class="dh-dashboard-icon"><i class="fas fa-magnifying-glass" aria-hidden="true"></i></span>
+        <span class="dh-dashboard-copy">
+          <span class="dh-dashboard-label">Investigation &amp; Review</span>
+          <span class="dh-dashboard-count">{{ review_count }}</span>
+          <span class="dh-dashboard-description">Currently being reviewed</span>
+        </span>
+        <i class="fas fa-arrow-right dh-dashboard-arrow" aria-hidden="true"></i>
+      </a>
+    </div>
+    <div class="col-12 col-md-6">
+      <a class="card dh-dashboard-card h-100" href="{% url 'discipline:case_list' %}?status_group=decision">
+        <span class="dh-dashboard-icon"><i class="fas fa-scale-balanced" aria-hidden="true"></i></span>
+        <span class="dh-dashboard-copy">
+          <span class="dh-dashboard-label">Awaiting Decision</span>
+          <span class="dh-dashboard-count">{{ decision_count }}</span>
+          <span class="dh-dashboard-description">Pending authorized decision</span>
+        </span>
+        <i class="fas fa-arrow-right dh-dashboard-arrow" aria-hidden="true"></i>
+      </a>
+    </div>
+  </section>
+</main>
+{% endblock %}

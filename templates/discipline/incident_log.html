@@ -1,0 +1,199 @@
+{% extends "theme/base.html" %}
+{% block title %}Incident Log | Discipline Office{% endblock %}
+{% block content %}
+<main class="container-xl">
+
+  <nav aria-label="breadcrumb" class="mb-2">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{% url 'discipline:dashboard' %}">Dashboard</a></li>
+      <li class="breadcrumb-item active" aria-current="page">Incident Log</li>
+    </ol>
+  </nav>
+
+  <div class="page-header mb-4">
+    <div>
+      <div class="page-pretitle">Discipline Management</div>
+      <h1 class="page-title mb-1">Incident Log</h1>
+      <p class="text-secondary mb-0">
+        All submitted written complaints and incident reports.
+        You see only reports you are authorised to access.
+      </p>
+    </div>
+    <div class="ms-auto">
+      <a class="btn btn-accent policy-add-btn" href="{% url 'discipline:intake' %}">
+        <i class="fas fa-clipboard-list me-2" aria-hidden="true"></i>New Intake
+      </a>
+    </div>
+  </div>
+
+  {# ── Search & filter ─────────────────────────────────── #}
+  <div class="card mb-4">
+    <div class="card-body">
+      <form method="get" role="search" aria-label="Search incident log">
+        <div class="row g-2 align-items-end">
+          <div class="col-12 col-md-4">
+            <label class="form-label" for="il-search">Search</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="fas fa-search" aria-hidden="true"></i></span>
+              <input id="il-search" type="search" name="q" value="{{ query }}"
+                     class="form-control" placeholder="Reference, student name or ID…">
+            </div>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label" for="il-type">Report type</label>
+            <select id="il-type" name="report_type" class="form-select">
+              <option value="">All types</option>
+              {% for val, lbl in report_type_choices %}
+              <option value="{{ val }}" {% if type_filter == val %}selected{% endif %}>{{ lbl }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label" for="il-status">Case status</label>
+            <select id="il-status" name="status" class="form-select">
+              <option value="">All statuses</option>
+              {% for val, lbl in status_choices %}
+              <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ lbl }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-3 d-flex gap-2">
+            <button type="submit" class="btn btn-primary flex-fill">
+              <i class="fas fa-filter me-1" aria-hidden="true"></i>Filter
+            </button>
+            {% if query or type_filter or status_filter %}
+            <a href="{% url 'discipline:incident_log' %}" class="btn btn-outline-secondary" title="Clear filters">
+              <i class="fas fa-times" aria-hidden="true"></i>
+            </a>
+            {% endif %}
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# ── Table ─────────────────────────────────────────── #}
+  <div class="card">
+    <div class="card-header d-flex align-items-center">
+      <h2 class="card-title mb-0">Submitted reports</h2>
+      <span class="ms-2 badge bg-secondary-lt">{{ reports.paginator.count }}</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-vcenter table-hover card-table">
+        <thead>
+          <tr>
+            <th>Reference</th>
+            <th>Type</th>
+            <th>Respondent / Student</th>
+            <th>Submitted by</th>
+            <th>Date Submitted</th>
+            <th>Case Status</th>
+            <th class="w-1">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for rpt in reports %}
+          <tr>
+            <td>
+              <span class="fw-semibold font-monospace text-primary">
+                {{ rpt.case.reference }}
+              </span>
+            </td>
+            <td>
+              {% if rpt.report_type == 'complaint' %}
+              <span class="badge bg-blue-lt">
+                <i class="fas fa-file-lines me-1" aria-hidden="true"></i>Complaint
+              </span>
+              {% else %}
+              <span class="badge bg-orange-lt">
+                <i class="fas fa-flag me-1" aria-hidden="true"></i>Incident
+              </span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="fw-medium">{{ rpt.respondent_name|default:"Not identified" }}</div>
+              {% if rpt.respondent_student_id %}
+              <div class="text-secondary small font-monospace">{{ rpt.respondent_student_id }}</div>
+              {% endif %}
+            </td>
+            <td class="text-secondary">{{ rpt.submitted_by.get_full_name|default:rpt.submitted_by.username }}</td>
+            <td class="text-secondary">{{ rpt.submitted_at|date:"M j, Y" }}</td>
+            <td>
+              <span class="badge
+                {% if rpt.case.status == 'submitted' %}bg-yellow-lt
+                {% elif rpt.case.status == 'closed' or rpt.case.status == 'referred' %}bg-success-lt
+                {% elif rpt.case.status == 'returned' %}bg-danger-lt
+                {% else %}bg-primary-lt{% endif %}">
+                {{ rpt.case.get_status_display }}
+              </span>
+            </td>
+            <td>
+              <a class="btn btn-sm btn-outline-primary"
+                 href="{% url 'discipline:case_detail' rpt.case.pk %}">
+                <i class="fas fa-eye me-1" aria-hidden="true"></i>View
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7">
+              <div class="empty py-5">
+                <div class="empty-icon">
+                  <i class="fas fa-inbox fa-2x text-muted" aria-hidden="true"></i>
+                </div>
+                <p class="empty-title">No reports found</p>
+                <p class="empty-subtitle">
+                  {% if query or type_filter or status_filter %}
+                    Try adjusting your filters.
+                    <a href="{% url 'discipline:incident_log' %}">Clear filters</a>
+                  {% else %}
+                    No complaints or incident reports have been submitted yet.
+                  {% endif %}
+                </p>
+                <div class="empty-action">
+                  <a href="{% url 'discipline:intake' %}" class="btn btn-primary">
+                    <i class="fas fa-clipboard-list me-2" aria-hidden="true"></i>Submit a Report
+                  </a>
+                </div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if reports.paginator.num_pages > 1 %}
+    <div class="card-footer d-flex flex-wrap align-items-center gap-2">
+      <p class="m-0 text-muted small">
+        Showing {{ reports.start_index }}–{{ reports.end_index }} of {{ reports.paginator.count }}
+      </p>
+      <nav class="ms-auto" aria-label="Incident log pages">
+        <ul class="pagination mb-0">
+          {% if reports.has_previous %}
+          <li class="page-item">
+            <a class="page-link" href="?page={{ reports.previous_page_number }}&q={{ query|urlencode }}&report_type={{ type_filter }}&status={{ status_filter }}">
+              <i class="fas fa-chevron-left" aria-hidden="true"></i>
+            </a>
+          </li>
+          {% endif %}
+          {% for num in reports.paginator.page_range %}
+          <li class="page-item {% if reports.number == num %}active{% endif %}">
+            <a class="page-link" href="?page={{ num }}&q={{ query|urlencode }}&report_type={{ type_filter }}&status={{ status_filter }}">{{ num }}</a>
+          </li>
+          {% endfor %}
+          {% if reports.has_next %}
+          <li class="page-item">
+            <a class="page-link" href="?page={{ reports.next_page_number }}&q={{ query|urlencode }}&report_type={{ type_filter }}&status={{ status_filter }}">
+              <i class="fas fa-chevron-right" aria-hidden="true"></i>
+            </a>
+          </li>
+          {% endif %}
+        </ul>
+      </nav>
+    </div>
+    {% endif %}
+  </div>
+
+</main>
+{% endblock %}

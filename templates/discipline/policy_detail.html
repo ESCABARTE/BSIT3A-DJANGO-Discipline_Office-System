@@ -1,0 +1,182 @@
+{% extends "theme/base.html" %}
+{% block title %}{{ category.name }} | Policy Catalog{% endblock %}
+{% block content %}
+<main class="container-xl" style="max-width: 860px;">
+
+  {# ── Breadcrumb ──────────────────────────────────────────── #}
+  <nav aria-label="breadcrumb" class="mb-2">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{% url 'discipline:dashboard' %}">Dashboard</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'discipline:policy_list' %}">Policy Catalog</a></li>
+      <li class="breadcrumb-item active" aria-current="page">{{ category.name }}</li>
+    </ol>
+  </nav>
+
+  {# ── Page header ─────────────────────────────────────────── #}
+  <div class="page-header mb-4">
+    <div class="flex-grow-1">
+      <div class="d-flex flex-wrap gap-2 mb-2">
+        {% if category.active %}
+        <span class="badge policy-badge-active fs-6">
+          <i class="fas fa-circle-check me-1" aria-hidden="true"></i>Active
+        </span>
+        {% else %}
+        <span class="badge policy-badge-inactive fs-6">
+          <i class="fas fa-circle-pause me-1" aria-hidden="true"></i>Inactive
+        </span>
+        {% endif %}
+        <span class="badge policy-badge-category fs-6">{{ category.get_classification_display }}</span>
+      </div>
+      <h1 class="page-title mb-1">{{ category.name }}</h1>
+      {% if category.description %}
+      <p class="text-secondary mb-0">{{ category.description }}</p>
+      {% endif %}
+    </div>
+    {% if can_edit %}
+    <div class="d-flex gap-2 ms-auto flex-wrap">
+      <a href="{% url 'discipline:policy_edit' category.pk %}" class="btn btn-outline-primary">
+        <i class="fas fa-pencil me-2" aria-hidden="true"></i>Edit Policy
+      </a>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Disclaimer ──────────────────────────────────────────── #}
+  <div class="alert alert-warning d-flex gap-2 align-items-start mb-4" role="note">
+    <i class="fas fa-triangle-exclamation mt-1 flex-shrink-0" aria-hidden="true"></i>
+    <div>
+      This policy entry classifies offense allegations for authorized review only.
+      It does not establish responsibility or automatically assign a sanction to any student.
+    </div>
+  </div>
+
+  {# ── Policy reference card ───────────────────────────────── #}
+  <div class="card mb-4">
+    <div class="card-header">
+      <h2 class="card-title">
+        <i class="fas fa-tag me-2 text-primary" aria-hidden="true"></i>Policy Reference
+      </h2>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-12 col-md-4">
+          <div class="policy-detail-label">Policy Code / Reference</div>
+          <div class="policy-detail-value">{{ category.policy_reference|default:"—" }}</div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="policy-detail-label">Offense Category</div>
+          <div class="policy-detail-value">{{ category.get_classification_display }}</div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="policy-detail-label">Version</div>
+          <div class="policy-detail-value">{{ category.policy_version }}</div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="policy-detail-label">Review Authority</div>
+          <div class="policy-detail-value">{{ category.review_authority|default:"—" }}</div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="policy-detail-label">Restitution Required</div>
+          <div class="policy-detail-value">
+            {% if category.restitution_required %}
+            <span class="badge bg-warning-lt text-warning">Yes</span>
+            {% else %}
+            <span class="badge bg-secondary-lt">No</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="policy-detail-label">Cases Under This Category</div>
+          <div class="policy-detail-value">
+            <a href="{% url 'discipline:case_list' %}">{{ case_count }} case{{ case_count|pluralize }}</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Escalation rules card ────────────────────────────────── #}
+  {% if category.escalation_rules %}
+  <div class="card mb-4">
+    <div class="card-header">
+      <h2 class="card-title">
+        <i class="fas fa-arrow-up-right-dots me-2 text-primary" aria-hidden="true"></i>
+        Applicable Rules &amp; Escalation Conditions
+      </h2>
+    </div>
+    <div class="card-body">
+      <div class="policy-text-block">{{ category.escalation_rules|linebreaksbr }}</div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Approved penalty guidance ───────────────────────────── #}
+  {% if category.permitted_sanctions %}
+  <div class="card mb-4">
+    <div class="card-header">
+      <h2 class="card-title">
+        <i class="fas fa-scale-balanced me-2 text-primary" aria-hidden="true"></i>
+        Approved Penalty Guidance
+      </h2>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info d-flex gap-2 mb-3" role="note">
+        <i class="fas fa-info-circle flex-shrink-0 mt-1" aria-hidden="true"></i>
+        <span>Penalty guidance is for authorized reference only. All sanctions must follow the school's
+        approved disciplinary procedure and require a designated decision authority.</span>
+      </div>
+      <code class="d-block p-3 bg-surface-secondary rounded">{{ category.permitted_sanctions }}</code>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Admin-only: internal notes ──────────────────────────── #}
+  {% if can_edit and category.notes %}
+  <div class="card mb-4 border-warning">
+    <div class="card-header bg-warning-lt">
+      <h2 class="card-title text-warning">
+        <i class="fas fa-lock me-2" aria-hidden="true"></i>
+        Internal Notes <span class="badge bg-warning-lt text-warning ms-2">Admin only</span>
+      </h2>
+    </div>
+    <div class="card-body">
+      <div class="policy-text-block">{{ category.notes|linebreaksbr }}</div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Timestamps ──────────────────────────────────────────── #}
+  <div class="card mb-4">
+    <div class="card-header">
+      <h2 class="card-title">
+        <i class="fas fa-clock-rotate-left me-2 text-primary" aria-hidden="true"></i>Record History
+      </h2>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-12 col-md-6">
+          <div class="policy-detail-label">Created</div>
+          <div class="policy-detail-value">{{ category.created_at|date:"F j, Y \\a\\t g:i A" }}</div>
+        </div>
+        <div class="col-12 col-md-6">
+          <div class="policy-detail-label">Last Updated</div>
+          <div class="policy-detail-value">{{ category.updated_at|date:"F j, Y \\a\\t g:i A" }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Footer actions ──────────────────────────────────────── #}
+  <div class="d-flex flex-wrap gap-2 mb-5">
+    <a href="{% url 'discipline:policy_list' %}" class="btn btn-outline-secondary">
+      <i class="fas fa-arrow-left me-2" aria-hidden="true"></i>Back to Policy Catalog
+    </a>
+    {% if can_edit %}
+    <a href="{% url 'discipline:policy_edit' category.pk %}" class="btn btn-outline-primary ms-auto">
+      <i class="fas fa-pencil me-2" aria-hidden="true"></i>Edit This Policy
+    </a>
+    {% endif %}
+  </div>
+
+</main>
+{% endblock %}

@@ -1,6 +1,6 @@
 {% extends "theme/base.html" %}
 {% load static %}
-{% block title %}Dashboard | Discipline Office{% endblock %}
+{% block title %}{{ dashboard_role }} Dashboard | Discipline Office{% endblock %}
 {% block content %}
 <main class="container-xl dashboard-page">
   <section class="dh-hero mb-4" aria-labelledby="dashboard-title">
@@ -11,12 +11,13 @@
           Welcome{% if user.first_name %}, {{ user.first_name }}{% else %}, {{ user.username }}{% endif %}
         </h1>
         <p class="dh-hero-sub mb-0">
-          Your Discipline Office Management System dashboard.
+          {% if user.is_superuser %}Manage accounts, records and all system modules.
+          {% else %}View and manage the discipline records and cases assigned to your role.{% endif %}
         </p>
       </div>
       <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-accent" href="{% url 'info:info_list' %}">
-          <i class="fas fa-address-card me-2" aria-hidden="true"></i>Personal Information
+          <i class="fas fa-address-card me-2" aria-hidden="true"></i>{% if user.is_superuser %}Information Records{% else %}My Information{% endif %}
         </a>
         {% if user.is_superuser %}
         <a class="btn btn-outline-light" href="{% url 'users:user_list' %}">
@@ -50,7 +51,7 @@
       <article class="card dh-summary-card h-100">
         <div class="card-body d-flex align-items-center gap-3">
           <span class="dh-summary-icon dh-summary-icon-gold"><i class="fas fa-folder-open" aria-hidden="true"></i></span>
-          <div><div class="text-secondary">My information records</div><div class="h2 mb-0">{{ records_count }}</div></div>
+          <div><div class="text-secondary">{% if user.is_superuser %}Accessible information records{% elif user.is_staff %}Office information records{% else %}My information records{% endif %}</div><div class="h2 mb-0">{{ records_count }}</div></div>
         </div>
       </article>
     </div>
@@ -60,9 +61,9 @@
     <div class="card-header d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2">
       <div>
         <h2 class="card-title mb-1" id="recent-records-title">Recently updated records</h2>
-        <p class="text-secondary small mb-0">Only information associated with your account is shown.</p>
+        <p class="text-secondary small mb-0">{% if user.is_superuser or user.is_staff %}Recent records visible to your office role.{% else %}Only information associated with your account is shown.{% endif %}</p>
       </div>
-      <a href="{% url 'info:info_list' %}" class="btn btn-outline-primary btn-sm">View all information</a>
+      <a href="{% url 'info:info_list' %}" class="btn btn-outline-primary btn-sm">View all records</a>
     </div>
     <div class="table-responsive">
       <table class="table table-vcenter card-table">
@@ -82,9 +83,9 @@
               <div class="empty py-4">
                 <div class="empty-icon"><i class="fas fa-folder-open" aria-hidden="true"></i></div>
                 <p class="empty-title">No records yet</p>
-                <p class="empty-subtitle">Information associated with your account will appear here.</p>
+                <p class="empty-subtitle">{% if user.is_superuser or user.is_staff %}Office information records will appear here.{% else %}Information associated with your account will appear here.{% endif %}</p>
                 <div class="empty-action">
-                  <a href="{% url 'info:info_list' %}" class="btn btn-primary">View Personal Information</a>
+                  <a href="{% url 'info:info_list' %}" class="btn btn-primary">View Information Records</a>
                 </div>
               </div>
             </td>

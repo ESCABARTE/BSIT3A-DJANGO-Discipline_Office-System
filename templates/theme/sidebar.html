@@ -1,6 +1,7 @@
 {% load static %}
-<aside class="navbar navbar-vertical navbar-expand-lg navbar-dark dh-sidebar">
+<aside class="navbar navbar-vertical navbar-expand-lg navbar-dark dh-sidebar" aria-label="Main navigation">
   <div class="container-fluid">
+
     <div class="navbar-brand navbar-brand-autodark dh-brand">
       <a href="{% url 'dashboard' %}" class="d-flex align-items-center gap-2 text-decoration-none">
         <img
@@ -23,22 +24,23 @@
       aria-controls="sidebar-menu"
       aria-expanded="false"
       aria-label="Toggle navigation"
-      >
+    >
       <span class="navbar-toggler-icon"></span>
     </button>
 
     <div class="collapse navbar-collapse" id="sidebar-menu">
-      <ul class="navbar-nav pt-lg-2 py-lg-2">
+      <ul class="navbar-nav pt-lg-2 pb-lg-2">
+
+        <!-- ══ GROUP 1: MAIN MENU ══ -->
+        <li class="nav-item">
+          <span class="dh-nav-section">Main Menu</span>
+        </li>
 
         <li class="nav-item">
-          <span class="dh-nav-section">
-            Menu
-          </span>
-        </li>
-        <li class="nav-item mb-1">
-          <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">
-            <span class="nav-link-icon d-md-none d-lg-inline-block">
-              <i class="fa fa-dashboard"></i>
+          <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' and request.resolver_match.app_name != 'discipline' %}active{% endif %}"
+             href="{% url 'dashboard' %}">
+            <span class="nav-link-icon">
+              <i class="fas fa-house" aria-hidden="true"></i>
             </span>
             <span class="nav-link-title">Dashboard</span>
           </a>
@@ -46,49 +48,222 @@
 
         {% if user.is_superuser %}
         <li class="nav-item">
-          <a class="nav-link {% if request.resolver_match.app_name == 'users' %}active{% endif %}" href="{% url 'users:user_list' %}">
-            <span class="nav-link-icon d-md-none d-lg-inline-block">
-              <i class="nav-icon fas fa-users"></i>
+          <a class="nav-link {% if request.resolver_match.app_name == 'users' %}active{% endif %}"
+             href="{% url 'users:user_list' %}">
+            <span class="nav-link-icon">
+              <i class="fas fa-users" aria-hidden="true"></i>
             </span>
             <span class="nav-link-title">User Management</span>
           </a>
         </li>
         {% endif %}
 
+        <!-- ══ GROUP 2: DISCIPLINE MANAGEMENT ══ -->
+        {% if user.is_authenticated %}
+        <!-- Collapsible group header -->
         <li class="nav-item">
-          <a class="nav-link {% if request.resolver_match.app_name == 'info' %}active{% endif %}" href="{% url 'info:info_list' %}">
-            <span class="nav-link-icon d-md-none d-lg-inline-block">
-              <i class="nav-icon fas fa-address-card"></i>
+          {% if request.resolver_match.app_name == 'discipline' and request.resolver_match.url_name != 'policy_list' and request.resolver_match.url_name != 'policy_create' and request.resolver_match.url_name != 'policy_detail' and request.resolver_match.url_name != 'policy_edit' and request.resolver_match.url_name != 'policy_log' and request.resolver_match.url_name != 'reports' %}
+          <a class="nav-link nav-link-toggle active-group"
+             data-bs-toggle="collapse"
+             data-bs-target="#disc-group"
+             aria-expanded="true"
+             aria-controls="disc-group"
+             href="#disc-group"
+             role="button">
+          {% else %}
+          <a class="nav-link nav-link-toggle"
+             data-bs-toggle="collapse"
+             data-bs-target="#disc-group"
+             aria-expanded="false"
+             aria-controls="disc-group"
+             href="#disc-group"
+             role="button">
+          {% endif %}
+            <span class="nav-link-icon">
+              <i class="fas fa-gavel" aria-hidden="true"></i>
             </span>
-            <span class="nav-link-title">Personal Information</span>
+            <span class="nav-link-title">Discipline Management</span>
+            <span class="nav-link-caret ms-auto">
+              <i class="fas fa-chevron-down" aria-hidden="true"></i>
+            </span>
           </a>
+
+          <!-- Sub-items — show=open if a discipline page is active -->
+          <div class="{% if request.resolver_match.app_name == 'discipline' and request.resolver_match.url_name != 'policy_list' and request.resolver_match.url_name != 'policy_create' and request.resolver_match.url_name != 'policy_detail' and request.resolver_match.url_name != 'policy_edit' and request.resolver_match.url_name != 'policy_log' and request.resolver_match.url_name != 'reports' %}collapse show{% else %}collapse{% endif %}"
+               id="disc-group">
+            <ul class="navbar-nav ps-4">
+
+              {% if is_authorized_official %}
+              <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' and request.resolver_match.app_name == 'discipline' or request.resolver_match.url_name == 'case_detail' or request.resolver_match.url_name == 'case_action' or request.resolver_match.url_name == 'stage_create' or request.resolver_match.url_name == 'summons_create' or request.resolver_match.url_name == 'summons_serve' or request.resolver_match.url_name == 'summons_extension' or request.resolver_match.url_name == 'answer_submit' %}active{% endif %}"
+                   href="{% url 'discipline:dashboard' %}">
+                  <span class="nav-link-icon">
+                    <i class="fas fa-scale-balanced" aria-hidden="true"></i>
+                  </span>
+                  <span class="nav-link-title">Discipline Cases</span>
+                </a>
+              </li>
+              {% endif %}
+
+              <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'case_list' or request.resolver_match.url_name == 'case_detail' and not is_authorized_official %}active{% endif %}"
+                   href="{% url 'discipline:case_list' %}">
+                  <span class="nav-link-icon">
+                    <i class="fas fa-folder-open" aria-hidden="true"></i>
+                  </span>
+                  <span class="nav-link-title">Case Register</span>
+                </a>
+              </li>
+
+              <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'intake' or request.resolver_match.url_name == 'intake_success' %}active{% endif %}"
+                   href="{% url 'discipline:intake' %}">
+                  <span class="nav-link-icon">
+                    <i class="fas fa-clipboard-list" aria-hidden="true"></i>
+                  </span>
+                  <span class="nav-link-title">Discipline Office Intake</span>
+                </a>
+              </li>
+
+              {% if is_authorized_official %}
+              <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'incident_log' %}active{% endif %}"
+                   href="{% url 'discipline:incident_log' %}">
+                  <span class="nav-link-icon">
+                    <i class="fas fa-list-check" aria-hidden="true"></i>
+                  </span>
+                  <span class="nav-link-title">Incident Log</span>
+                </a>
+              </li>
+              {% endif %}
+
+            </ul>
+          </div>
+        </li>
+        {% endif %}
+
+        <!-- ══ GROUP 3: POLICY MANAGEMENT ══ -->
+        {% if is_authorized_official %}
+        <li class="nav-item">
+          {% if request.resolver_match.url_name == 'policy_list' or request.resolver_match.url_name == 'policy_create' or request.resolver_match.url_name == 'policy_detail' or request.resolver_match.url_name == 'policy_edit' or request.resolver_match.url_name == 'policy_log' %}
+          <a class="nav-link nav-link-toggle active-group"
+             data-bs-toggle="collapse"
+             data-bs-target="#policy-group"
+             aria-expanded="true"
+             aria-controls="policy-group"
+             href="#policy-group"
+             role="button">
+          {% else %}
+          <a class="nav-link nav-link-toggle"
+             data-bs-toggle="collapse"
+             data-bs-target="#policy-group"
+             aria-expanded="false"
+             aria-controls="policy-group"
+             href="#policy-group"
+             role="button">
+          {% endif %}
+            <span class="nav-link-icon">
+              <i class="fas fa-book" aria-hidden="true"></i>
+            </span>
+            <span class="nav-link-title">Policy Management</span>
+            <span class="nav-link-caret ms-auto">
+              <i class="fas fa-chevron-down" aria-hidden="true"></i>
+            </span>
+          </a>
+
+          <div class="{% if request.resolver_match.url_name == 'policy_list' or request.resolver_match.url_name == 'policy_create' or request.resolver_match.url_name == 'policy_detail' or request.resolver_match.url_name == 'policy_edit' or request.resolver_match.url_name == 'policy_log' %}collapse show{% else %}collapse{% endif %}"
+               id="policy-group">
+            <ul class="navbar-nav ps-4">
+
+              <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'policy_list' or request.resolver_match.url_name == 'policy_detail' or request.resolver_match.url_name == 'policy_create' or request.resolver_match.url_name == 'policy_edit' %}active{% endif %}"
+                   href="{% url 'discipline:policy_list' %}">
+                  <span class="nav-link-icon">
+                    <i class="fas fa-book-open" aria-hidden="true"></i>
+                  </span>
+                  <span class="nav-link-title">Policy Catalog</span>
+                </a>
+              </li>
+
+              <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'policy_log' %}active{% endif %}"
+                   href="{% url 'discipline:policy_log' %}">
+                  <span class="nav-link-icon">
+                    <i class="fas fa-clock-rotate-left" aria-hidden="true"></i>
+                  </span>
+                  <span class="nav-link-title">Policy Log</span>
+                </a>
+              </li>
+
+            </ul>
+          </div>
+        </li>
+        {% endif %}
+
+        <!-- ══ GROUP 4: REPORTS & RECORDS ══ -->
+        <li class="nav-item mt-2">
+          <span class="dh-nav-section">Reports &amp; Records</span>
         </li>
 
-        {% if user.is_authenticated %}
-        <li class="nav-item d-lg-none">
-          <a class="nav-link" href="{% url 'logout' %}">
-            <span class="nav-link-icon d-md-none d-lg-inline-block">
-              <i class="nav-icon fas fa-sign-out-alt"></i>
+        {% if is_authorized_official %}
+        <li class="nav-item">
+          <a class="nav-link {% if request.resolver_match.url_name == 'reports' %}active{% endif %}"
+             href="{% url 'discipline:reports' %}">
+            <span class="nav-link-icon">
+              <i class="fas fa-chart-bar" aria-hidden="true"></i>
             </span>
-            <span class="nav-link-title">Logout</span>
+            <span class="nav-link-title">Reports &amp; Analytics</span>
           </a>
         </li>
         {% endif %}
 
+        {% if user.is_superuser or user.is_staff %}
+        <li class="nav-item">
+          <a class="nav-link {% if request.resolver_match.app_name == 'info' %}active{% endif %}"
+             href="{% url 'info:info_list' %}">
+            <span class="nav-link-icon">
+              <i class="fas fa-address-card" aria-hidden="true"></i>
+            </span>
+            <span class="nav-link-title">
+              {% if user.is_superuser %}Information Records{% else %}Office Records{% endif %}
+            </span>
+          </a>
+        </li>
+        {% endif %}
+
+        <!-- Mobile-only logout -->
+        <li class="nav-item d-lg-none mt-2">
+          <form method="post" action="{% url 'logout' %}">
+            {% csrf_token %}
+            <button class="nav-link border-0 w-100 text-start" type="submit">
+              <span class="nav-link-icon">
+                <i class="fas fa-sign-out-alt" aria-hidden="true"></i>
+              </span>
+              <span class="nav-link-title">Logout</span>
+            </button>
+          </form>
+        </li>
+
+        <!-- User card at bottom -->
         <li class="nav-item mt-auto dh-nav-sidebar-footer">
           <div class="dh-user-card">
-            <a href="{% if user.is_superuser %}{% url 'users:user_list' %}{% else %}{% url 'dashboard' %}{% endif %}" class="d-flex align-items-center gap-2 text-decoration-none text-white min-w-0 w-100">
+            <a href="{% if user.is_superuser %}{% url 'users:user_list' %}{% else %}{% url 'dashboard' %}{% endif %}"
+               class="d-flex align-items-center gap-2 text-decoration-none text-white min-w-0 flex-grow-1">
               <span class="dh-avatar">{{ user.username|first|upper }}</span>
-              <span class="min-w-0 flex-grow-1">
-                <span class="dh-user-name">{{ user.username }}</span>
-                <span class="dh-user-role">{% if user.is_superuser %}Administrator{% elif user.is_staff %}Staff / Officer{% else %}User{% endif %}</span>
+              <span class="min-w-0">
+                <span class="dh-user-name">{{ user.get_full_name|default:user.username }}</span>
+                <span class="dh-user-role">{% if user.is_superuser %}Admin{% else %}Staff{% endif %}</span>
               </span>
             </a>
-            {% if user.is_authenticated %}
-            <a href="{% url 'logout' %}" class="dh-user-logout" title="Logout">
-              <i class="fas fa-sign-out-alt"></i>
-            </a>
-            {% endif %}
+            <form method="post" action="{% url 'logout' %}" class="ms-auto flex-shrink-0">
+              {% csrf_token %}
+              <button type="submit"
+                      class="dh-user-logout border-0 bg-transparent"
+                      title="Logout"
+                      aria-label="Log out">
+                <i class="fas fa-sign-out-alt" aria-hidden="true"></i>
+              </button>
+            </form>
           </div>
         </li>
 

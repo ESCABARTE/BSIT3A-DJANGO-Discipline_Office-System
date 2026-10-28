@@ -26,7 +26,7 @@ def _parse_age(raw_age):
 
 @login_required(login_url='login')
 def info_list_page(request):
-    """Render the searchable, paginated info list for the signed-in user."""
+    """Render the searchable, paginated records permitted by the user's role."""
     query = request.GET.get('q', '').strip()
 
     infos_list = scoped_infos(request.user).order_by('name')
@@ -50,7 +50,7 @@ def info_list_page(request):
 
 @login_required(login_url='login')
 def info_list_ajax(request):
-    """Return the signed-in user's filtered info records as paginated JSON."""
+    """Return records visible to the signed-in user's role as paginated JSON."""
     query = request.GET.get('q', '').strip()
 
     infos_list = scoped_infos(request.user).order_by('name')
@@ -78,7 +78,7 @@ def info_list_ajax(request):
 
 @login_required(login_url='login')
 def info_get_ajax(request, pk):
-    """Return one of the signed-in user's info records as JSON."""
+    """Return one record visible to the signed-in user's role as JSON."""
     info = scoped_info(request.user, pk)
     return JsonResponse({
         'id': info.id,
@@ -164,7 +164,10 @@ def info_save_ajax(request):
 @login_required(login_url='login')
 @require_POST
 def info_delete_ajax(request, pk):
-    """Delete the specified signed-in user's info record and confirm as JSON."""
+    """Allow only administrators to delete information records."""
+    if not request.user.is_superuser:
+        return JsonResponse({'error': 'Only administrators may delete records.'}, status=403)
+
     info = scoped_info(request.user, pk)
     info_name = info.name
     info.delete()

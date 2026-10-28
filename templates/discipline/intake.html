@@ -1,0 +1,534 @@
+{% extends "theme/base.html" %}
+{% load static %}
+{% block title %}Discipline Office Intake | Discipline Office{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  'use strict';
+
+  /* ── State ──────────────────────────────────────────────── */
+  let currentType = '{{ report_type|escapejs }}';   // pre-set on page load
+
+  /* ── DOM refs (resolved after DOMContentLoaded) ──────────── */
+  const $ = id => document.getElementById(id);
+
+  /* ── Sections ────────────────────────────────────────────── */
+  function showType(type) {
+    currentType = type;
+
+    // Card selection highlight
+    document.querySelectorAll('.intake-type-card').forEach(c => {
+      c.classList.toggle('intake-type-card--selected', c.dataset.type === type);
+    });
+
+    // Hidden radio keeps the value for the POST body
+    const radio = document.querySelector(`input[name="report_type"][value="${type}"]`);
+    if (radio) radio.checked = true;
+
+    // Show/hide blocks
+    $('section-complainant').style.display = type === 'complaint' ? '' : 'none';
+    $('section-officer').style.display     = type === 'incident'  ? '' : 'none';
+    $('section-form').style.display        = type              ? '' : 'none';
+
+    // Sync required attributes for accessibility / HTML5 validation
+    syncRequired(type);
+
+    // Update submit button labels
+    updateButtons(type);
+
+    // Scroll form into view gently
+    if (type) {
+      setTimeout(() => {
+        $('section-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 80);
+    }
+  }
+
+  function syncRequired(type) {
+    // Complainant fields
+    ['id_complainant_name', 'id_complainant_student_id'].forEach(id => {
+      const el = $(id);
+      if (el) el.required = type === 'complaint';
+    });
+    // Officer fields
+    const pos = $('id_reporting_position');
+    if (pos) pos.required = type === 'incident';
+    // Narration always required when a type is chosen
+    const narr = $('id_narration');
+    if (narr) narr.required = !!type;
+  }
+
+  function updateButtons(type) {
+    const btnPrimary = $('btn-submit-primary');
+    const btnLabel   = $('btn-submit-label');
+    if (!btnPrimary) return;
+    if (type === 'complaint') {
+      btnLabel.textContent = 'Submit Written Complaint';
+      btnPrimary.className = 'btn btn-primary';
+    } else if (type === 'incident') {
+      btnLabel.textContent = 'Submit Incident Report';
+      btnPrimary.className = 'btn btn-danger';
+    } else {
+      btnLabel.textContent = 'Submit';
+      btnPrimary.className = 'btn btn-primary';
+    }
+  }
+
+  /* ── Confirmation dialog ─────────────────────────────────── */
+  function confirmAndSubmit(e) {
+    if (!currentType) {
+      e.preventDefault();
+      alert('Please select a report type before submitting.');
+      return;
+    }
+    const label = currentType === 'complaint' ? 'Written Complaint' : 'Incident Report';
+    const ok = confirm(
+      `You are about to submit a ${label} to the Discipline Office.\n\n` +
+      'Submission does not determine responsibility or impose any sanction. ' +
+      'The report will be reviewed by authorized personnel.\n\n' +
+      'Proceed?'
+    );
+    if (!ok) e.preventDefault();
+  }
+
+  /* ── Anti-double-submit ───────────────────────────────────── */
+  function lockSubmit() {
+    const btn = $('btn-submit-primary');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Submitting…';
+    }
+  }
+
+  /* ── Init ────────────────────────────────────────────────── */
+  document.addEventListener('DOMContentLoaded', function () {
+    // Card click
+    document.querySelectorAll('.intake-type-card').forEach(card => {
+      card.addEventListener('click', () => showType(card.dataset.type));
+      card.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showType(card.dataset.type); }
+      });
+    });
+
+    // Form submit
+    const form = $('intake-form');
+    if (form) {
+      form.addEventListener('submit', function (e) {
+        confirmAndSubmit(e);
+        if (!e.defaultPrevented) lockSubmit();
+      });
+    }
+
+    // Pre-select from URL param or server-side state
+    if (currentType) showType(currentType);
+  });
+})();
+</script>
+{% endblock %}
+
+{% block content %}
+<main class="container-xl intake-page">
+
+  {# ── Breadcrumb ──────────────────────────────────────────── #}
+  <nav aria-label="breadcrumb" class="mb-2">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{% url 'discipline:dashboard' %}">Dashboard</a></li>
+      <li class="breadcrumb-item active" aria-current="page">Discipline Office Intake</li>
+    </ol>
+  </nav>
+
+  {# ── Page header ─────────────────────────────────────────── #}
+  <div class="page-header mb-4">
+    <div>
+      <div class="page-pretitle">Discipline Office · Intake</div>
+      <h1 class="page-title">Discipline Office Intake</h1>
+      <p class="text-secondary mb-0 mt-1">
+        Submit a written complaint or file an incident report for review by the Discipline Office.
+        Submission does not determine responsibility or impose a sanction.
+      </p>
+    </div>
+  </div>
+
+  {# ── Info banner ─────────────────────────────────────────── #}
+  <div class="alert alert-info d-flex gap-3 align-items-start mb-4" role="note">
+    <i class="fas fa-shield-halved fs-4 mt-1 flex-shrink-0" aria-hidden="true"></i>
+    <div>
+      <strong>Privacy &amp; accuracy notice:</strong> Only submit information you are authorised
+      to share. All submissions are reviewed by authorised personnel before any action is taken.
+      Contact the Discipline Office for instructions on attaching signed documents or evidence.
+    </div>
+  </div>
+
+  {# ── Server-side errors ──────────────────────────────────── #}
+  {% include 'theme/messages.html' %}
+
+  {# ── Step 1 — Report-type selector cards ─────────────────── #}
+  <section class="intake-section mb-4" aria-labelledby="step-type-heading">
+    <h2 class="intake-section-title" id="step-type-heading">
+      <span class="intake-step-badge">1</span> Select report type
+      <span class="text-danger ms-1" aria-hidden="true">*</span>
+    </h2>
+    <div class="row g-3">
+      {# Written Complaint card #}
+      <div class="col-12 col-md-6">
+        <div
+          class="intake-type-card{% if report_type == 'complaint' %} intake-type-card--selected{% endif %}"
+          data-type="complaint"
+          role="radio"
+          aria-checked="{% if report_type == 'complaint' %}true{% else %}false{% endif %}"
+          tabindex="0"
+          aria-label="Written Complaint"
+        >
+          <span class="intake-type-icon intake-type-icon--complaint" aria-hidden="true">
+            <i class="fas fa-file-lines"></i>
+          </span>
+          <div class="intake-type-body">
+            <div class="intake-type-title">Written Complaint</div>
+            <div class="intake-type-desc">
+              Submit a formal complaint about an incident or violation of school rules.
+              For use by students, parents, or authorised parties.
+            </div>
+          </div>
+          <span class="intake-type-check" aria-hidden="true"><i class="fas fa-circle-check"></i></span>
+        </div>
+      </div>
+      {# Incident Report card #}
+      <div class="col-12 col-md-6">
+        <div
+          class="intake-type-card{% if report_type == 'incident' %} intake-type-card--selected{% endif %}{% if not can_file_incident %} intake-type-card--disabled{% endif %}"
+          data-type="incident"
+          role="radio"
+          aria-checked="{% if report_type == 'incident' %}true{% else %}false{% endif %}"
+          tabindex="{% if can_file_incident %}0{% else %}-1{% endif %}"
+          aria-label="Incident Report{% if not can_file_incident %} (restricted to authorised school officials){% endif %}"
+          {% if not can_file_incident %}aria-disabled="true"{% endif %}
+        >
+          <span class="intake-type-icon intake-type-icon--incident" aria-hidden="true">
+            <i class="fas fa-clipboard-list"></i>
+          </span>
+          <div class="intake-type-body">
+            <div class="intake-type-title">Incident Report</div>
+            <div class="intake-type-desc">
+              Document an incident observed or reported by school personnel or an authorised official.
+              {% if not can_file_incident %}<span class="badge bg-secondary-lt ms-1">Officials only</span>{% endif %}
+            </div>
+          </div>
+          <span class="intake-type-check" aria-hidden="true"><i class="fas fa-circle-check"></i></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {# ── Intake form (shown only after a type is selected) ────── #}
+  <form
+    id="intake-form"
+    method="post"
+    enctype="multipart/form-data"
+    novalidate
+    aria-label="Discipline Office intake form"
+  >
+    {% csrf_token %}
+    {# Hidden radio group — value sent with POST #}
+    <div hidden aria-hidden="true">
+      <input type="radio" name="report_type" value="complaint" {% if report_type == 'complaint' %}checked{% endif %}>
+      <input type="radio" name="report_type" value="incident"  {% if report_type == 'incident'  %}checked{% endif %}>
+    </div>
+
+    <div id="section-form" {% if not report_type %}style="display:none"{% endif %}>
+
+      {# ── Step 2 — Complainant / Reporting Person ───────────── #}
+
+      {# -- Written Complaint: complainant fields -- #}
+      <section
+        id="section-complainant"
+        class="intake-section mb-4"
+        aria-labelledby="step-complainant-heading"
+        {% if report_type != 'complaint' %}style="display:none"{% endif %}
+      >
+        <h2 class="intake-section-title" id="step-complainant-heading">
+          <span class="intake-step-badge">2</span> Complainant information
+        </h2>
+        {% if form %}
+        {% for e in form.non_field_errors %}<div class="alert alert-danger">{{ e }}</div>{% endfor %}
+        {% endif %}
+        <div class="card">
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="id_complainant_name">
+                  Complainant name <span class="text-danger" aria-hidden="true">*</span>
+                </label>
+                {% if form and report_type == 'complaint' %}
+                  {{ form.complainant_name }}
+                  {% for e in form.complainant_name.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+                {% else %}
+                  <input type="text" id="id_complainant_name" name="complainant_name" class="form-control" maxlength="180">
+                {% endif %}
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="id_complainant_student_id">
+                  Student ID <span class="text-danger" aria-hidden="true">*</span>
+                </label>
+                {% if form and report_type == 'complaint' %}
+                  {{ form.complainant_student_id }}
+                  {% for e in form.complainant_student_id.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+                {% else %}
+                  <input type="text" id="id_complainant_student_id" name="complainant_student_id" class="form-control" maxlength="80">
+                {% endif %}
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="id_complainant_program">Course / programme</label>
+                {% if form and report_type == 'complaint' %}
+                  {{ form.complainant_program }}
+                {% else %}
+                  <input type="text" id="id_complainant_program" name="complainant_program" class="form-control" maxlength="160">
+                {% endif %}
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="id_complainant_year_section">Year level &amp; section</label>
+                {% if form and report_type == 'complaint' %}
+                  {{ form.complainant_year_section }}
+                {% else %}
+                  <input type="text" id="id_complainant_year_section" name="complainant_year_section" class="form-control" maxlength="120">
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {# -- Incident Report: reporting person fields -- #}
+      <section
+        id="section-officer"
+        class="intake-section mb-4"
+        aria-labelledby="step-officer-heading"
+        {% if report_type != 'incident' %}style="display:none"{% endif %}
+      >
+        <h2 class="intake-section-title" id="step-officer-heading">
+          <span class="intake-step-badge">2</span> Reporting person information
+        </h2>
+        <div class="card">
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="id_reporting_position">
+                  Position / designation <span class="text-danger" aria-hidden="true">*</span>
+                </label>
+                {% if form and report_type == 'incident' %}
+                  {{ form.reporting_position }}
+                  {% for e in form.reporting_position.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+                {% else %}
+                  <input type="text" id="id_reporting_position" name="reporting_position" class="form-control" maxlength="160" placeholder="e.g. Class Adviser, Security Officer">
+                {% endif %}
+                <div class="form-hint">Your official role or designation at the school.</div>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="id_reporter_name_display">Reporting person's name</label>
+                <input
+                  type="text"
+                  id="id_reporter_name_display"
+                  class="form-control"
+                  value="{{ request.user.get_full_name|default:request.user.username }}"
+                  disabled
+                  aria-describedby="reporter-name-hint"
+                >
+                <div id="reporter-name-hint" class="form-hint">Automatically set to your account name.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {# ── Step 3 — Student / Respondent information ─────────── #}
+      <section class="intake-section mb-4" aria-labelledby="step-student-heading">
+        <h2 class="intake-section-title" id="step-student-heading">
+          <span class="intake-step-badge">3</span> Student information
+          <span class="text-secondary fs-6 fw-normal ms-2">(if known)</span>
+        </h2>
+        <div class="card">
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="id_respondent_name">Student name</label>
+                {% if form %}
+                  {{ form.respondent_name }}
+                  {% for e in form.respondent_name.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+                {% else %}
+                  <input type="text" id="id_respondent_name" name="respondent_name" class="form-control" maxlength="180">
+                {% endif %}
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="id_respondent_student_id">Student ID</label>
+                {% if form %}
+                  {{ form.respondent_student_id }}
+                {% else %}
+                  <input type="text" id="id_respondent_student_id" name="respondent_student_id" class="form-control" maxlength="80">
+                {% endif %}
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="id_respondent_program">Course / programme</label>
+                {% if form %}
+                  {{ form.respondent_program }}
+                {% else %}
+                  <input type="text" id="id_respondent_program" name="respondent_program" class="form-control" maxlength="160">
+                {% endif %}
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="id_respondent_year_section">Year level &amp; section</label>
+                {% if form %}
+                  {{ form.respondent_year_section }}
+                {% else %}
+                  <input type="text" id="id_respondent_year_section" name="respondent_year_section" class="form-control" maxlength="120">
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {# ── Step 4 — Incident details ─────────────────────────── #}
+      <section class="intake-section mb-4" aria-labelledby="step-incident-heading">
+        <h2 class="intake-section-title" id="step-incident-heading">
+          <span class="intake-step-badge">4</span> Incident details
+        </h2>
+        <div class="card">
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="id_incident_at">Date &amp; time of incident</label>
+                {% if form %}
+                  {{ form.incident_at }}
+                  {% for e in form.incident_at.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+                {% else %}
+                  <input type="datetime-local" id="id_incident_at" name="incident_at" class="form-control">
+                {% endif %}
+                <div class="form-hint">Leave blank if the exact time is unknown.</div>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="id_incident_place">Location of incident</label>
+                {% if form %}
+                  {{ form.incident_place }}
+                  {% for e in form.incident_place.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+                {% else %}
+                  <input type="text" id="id_incident_place" name="incident_place" class="form-control" maxlength="180">
+                {% endif %}
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="id_narration">
+                  Narration / description of incident
+                  <span class="text-danger" aria-hidden="true">*</span>
+                </label>
+                {% if form %}
+                  {{ form.narration }}
+                  {% for e in form.narration.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+                {% else %}
+                  <textarea id="id_narration" name="narration" class="form-control" rows="7" required></textarea>
+                {% endif %}
+                <div class="form-hint">
+                  Describe the incident in detail. Include what happened, when, where, and who was involved.
+                  Use factual language; this narration is subject to authorised review.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {# ── Step 5 — Witnesses and evidence ──────────────────── #}
+      <section class="intake-section mb-4" aria-labelledby="step-witness-heading">
+        <h2 class="intake-section-title" id="step-witness-heading">
+          <span class="intake-step-badge">5</span> Witnesses &amp; supporting information
+          <span class="text-secondary fs-6 fw-normal ms-2">(optional)</span>
+        </h2>
+        <div class="card">
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label" for="id_witness_information">Witness information</label>
+                {% if form %}
+                  {{ form.witness_information }}
+                  {% for e in form.witness_information.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+                {% else %}
+                  <textarea id="id_witness_information" name="witness_information" class="form-control" rows="3"></textarea>
+                {% endif %}
+                <div class="form-hint">Names or descriptions of any witnesses. Do not include confidential third-party information without authorisation.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {# ── Step 6 — Acknowledgment & submission ─────────────── #}
+      <section class="intake-section mb-4" aria-labelledby="step-submit-heading">
+        <h2 class="intake-section-title" id="step-submit-heading">
+          <span class="intake-step-badge">6</span> Review &amp; submit
+        </h2>
+        <div class="card">
+          <div class="card-body">
+            {# Acknowledgment checkbox #}
+            <div class="mb-4">
+              {% if form %}
+                <div class="form-check">
+                  {{ form.acknowledgment }}
+                  <label class="form-check-label" for="{{ form.acknowledgment.id_for_label }}">
+                    I confirm that the information I have provided is accurate and complete to the best
+                    of my knowledge. I understand that this submission is for authorised Discipline Office
+                    review and does not constitute a finding of responsibility or an imposed sanction.
+                    <span class="text-danger" aria-hidden="true">*</span>
+                  </label>
+                  {% for e in form.acknowledgment.errors %}
+                    <div class="invalid-feedback d-block">{{ e }}</div>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="id_acknowledgment" name="acknowledgment" required>
+                  <label class="form-check-label" for="id_acknowledgment">
+                    I confirm that the information I have provided is accurate and complete to the best
+                    of my knowledge. I understand that this submission is for authorised Discipline Office
+                    review and does not constitute a finding of responsibility or an imposed sanction.
+                    <span class="text-danger" aria-hidden="true">*</span>
+                  </label>
+                </div>
+              {% endif %}
+            </div>
+
+            {# Disclaimer box #}
+            <div class="alert alert-warning d-flex gap-2 align-items-start mb-4">
+              <i class="fas fa-triangle-exclamation mt-1 flex-shrink-0" aria-hidden="true"></i>
+              <div>
+                <strong>Important:</strong> Submitting this form does not automatically mean
+                that any student has been found responsible or that a disciplinary penalty will be
+                imposed. All submissions are subject to authorised review in accordance with
+                school policy.
+              </div>
+            </div>
+
+            {# Action row #}
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+              <a class="btn btn-outline-secondary" href="{% url 'discipline:case_list' %}">
+                <i class="fas fa-arrow-left me-2" aria-hidden="true"></i>Cancel
+              </a>
+              <button
+                id="btn-submit-primary"
+                type="submit"
+                class="btn btn-primary"
+              >
+                <i class="fas fa-paper-plane me-2" aria-hidden="true"></i>
+                <span id="btn-submit-label">
+                  {% if report_type == 'complaint' %}Submit Written Complaint
+                  {% elif report_type == 'incident' %}Submit Incident Report
+                  {% else %}Submit{% endif %}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>{# /section-form #}
+  </form>
+
+</main>
+{% endblock %}

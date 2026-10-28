@@ -1,0 +1,306 @@
+{% extends "theme/base.html" %}
+{% block title %}{% if is_edit %}Edit Policy{% else %}Add New Policy{% endif %} | Discipline Office{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  'use strict';
+
+  /* ── Publish confirmation ─────────────────────────── */
+  const form = document.getElementById('policy-form');
+  if (form) {
+    form.addEventListener('submit', function (e) {
+      const activeChk = document.getElementById('id_active');
+      if (activeChk && activeChk.checked) {
+        const ok = confirm(
+          'You are about to save this policy as Active.\n\n' +
+          'Active entries are visible to authorized users and may be applied to cases.\n\n' +
+          'Make sure this content has been reviewed and approved by the school before proceeding.\n\n' +
+          'Continue?'
+        );
+        if (!ok) e.preventDefault();
+      }
+    });
+  }
+});
+</script>
+{% endblock %}
+
+{% block content %}
+<main class="container-xl" style="max-width: 860px;">
+
+  {# ── Breadcrumb ──────────────────────────────────────────── #}
+  <nav aria-label="breadcrumb" class="mb-2">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{% url 'discipline:dashboard' %}">Dashboard</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'discipline:policy_list' %}">Policy Catalog</a></li>
+      <li class="breadcrumb-item active" aria-current="page">
+        {% if is_edit %}Edit Policy{% else %}Add New Policy{% endif %}
+      </li>
+    </ol>
+  </nav>
+
+  {# ── Page header ─────────────────────────────────────────── #}
+  <div class="page-header mb-4">
+    <div>
+      <div class="page-pretitle">Policy Catalog · {% if is_edit %}Edit{% else %}New Entry{% endif %}</div>
+      <h1 class="page-title mb-1">
+        {% if is_edit %}Edit Policy Entry{% else %}Add New Policy Entry{% endif %}
+      </h1>
+      <p class="text-secondary mb-0">
+        All entries must be reviewed and confirmed with authorized school personnel before being applied to a case.
+      </p>
+    </div>
+  </div>
+
+  {# ── Non-field errors ─────────────────────────────────────── #}
+  {% if form.non_field_errors %}
+  <div class="alert alert-danger mb-4" role="alert">
+    {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+  </div>
+  {% endif %}
+
+  <form id="policy-form" method="post" novalidate>
+    {% csrf_token %}
+
+    {# ══════════════════════════════════════════════════════════
+       Section 1 — Basic Information
+       ══════════════════════════════════════════════════════════ #}
+    <div class="card mb-4">
+      <div class="card-header policy-form-section-header">
+        <span class="policy-form-step">1</span>
+        <div>
+          <h2 class="card-title mb-0">Basic Information</h2>
+          <p class="text-secondary small mb-0">The primary identifier and category for this policy entry.</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+
+          {# Policy name #}
+          <div class="col-12">
+            <label class="form-label" for="{{ form.name.id_for_label }}">
+              Policy Title <span class="text-danger" aria-hidden="true">*</span>
+            </label>
+            {{ form.name }}
+            {% if form.name.errors %}
+            <div class="invalid-feedback d-block">{{ form.name.errors|join:", " }}</div>
+            {% endif %}
+            <div class="form-hint">Use the exact name from the approved school handbook or policy document.</div>
+          </div>
+
+          {# Policy reference #}
+          <div class="col-12 col-md-6">
+            <label class="form-label" for="{{ form.policy_reference.id_for_label }}">
+              Policy Code / Reference Number
+            </label>
+            {{ form.policy_reference }}
+            {% if form.policy_reference.errors %}
+            <div class="invalid-feedback d-block">{{ form.policy_reference.errors|join:", " }}</div>
+            {% endif %}
+            <div class="form-hint">Optional unique identifier, e.g. KCC-DO-2024-001.</div>
+          </div>
+
+          {# Classification #}
+          <div class="col-12 col-md-6">
+            <label class="form-label" for="{{ form.classification.id_for_label }}">
+              Offense Category <span class="text-danger" aria-hidden="true">*</span>
+            </label>
+            {{ form.classification }}
+            {% if form.classification.errors %}
+            <div class="invalid-feedback d-block">{{ form.classification.errors|join:", " }}</div>
+            {% endif %}
+            <div class="form-hint">Select the review classification that applies to this offense.</div>
+          </div>
+
+          {# Short description #}
+          <div class="col-12">
+            <label class="form-label" for="{{ form.description.id_for_label }}">
+              Short Description <span class="text-danger" aria-hidden="true">*</span>
+            </label>
+            {{ form.description }}
+            {% if form.description.errors %}
+            <div class="invalid-feedback d-block">{{ form.description.errors|join:", " }}</div>
+            {% endif %}
+            <div class="form-hint">A brief summary (2–4 sentences) shown in the Policy Catalog list.</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    {# ══════════════════════════════════════════════════════════
+       Section 2 — Policy Details
+       ══════════════════════════════════════════════════════════ #}
+    <div class="card mb-4">
+      <div class="card-header policy-form-section-header">
+        <span class="policy-form-step">2</span>
+        <div>
+          <h2 class="card-title mb-0">Policy Details</h2>
+          <p class="text-secondary small mb-0">Detailed rules, escalation guidance, and review authority.</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+
+          {# Escalation rules (used as full policy description) #}
+          <div class="col-12">
+            <label class="form-label" for="{{ form.escalation_rules.id_for_label }}">
+              Applicable Rules or Escalation Conditions
+            </label>
+            {{ form.escalation_rules }}
+            {% if form.escalation_rules.errors %}
+            <div class="invalid-feedback d-block">{{ form.escalation_rules.errors|join:", " }}</div>
+            {% endif %}
+            <div class="form-hint">Describe conditions under which this offense escalates to a higher review level.</div>
+          </div>
+
+          {# Permitted sanctions (approved guidance only) #}
+          <div class="col-12">
+            <label class="form-label" for="{{ form.permitted_sanctions.id_for_label }}">
+              Approved Penalty Guidance
+              <span class="badge bg-warning-lt text-warning ms-1">Admin only</span>
+            </label>
+            {{ form.permitted_sanctions }}
+            {% if form.permitted_sanctions.errors %}
+            <div class="invalid-feedback d-block">{{ form.permitted_sanctions.errors|join:", " }}</div>
+            {% endif %}
+            <div class="form-hint">
+              JSON list of permitted sanction codes from the approved school policy, e.g.
+              <code>["jug", "post_1"]</code>. Do not invent penalties not in the handbook.
+            </div>
+          </div>
+
+          {# Review authority #}
+          <div class="col-12 col-md-6">
+            <label class="form-label" for="{{ form.review_authority.id_for_label }}">
+              Review Authority
+            </label>
+            {{ form.review_authority }}
+            {% if form.review_authority.errors %}
+            <div class="invalid-feedback d-block">{{ form.review_authority.errors|join:", " }}</div>
+            {% endif %}
+            <div class="form-hint">The school official or committee that reviews cases under this policy.</div>
+          </div>
+
+          {# Restitution required #}
+          <div class="col-12 col-md-6 d-flex flex-column justify-content-center">
+            <label class="form-label">Restitution Required</label>
+            <div class="form-check mt-1">
+              {{ form.restitution_required }}
+              <label class="form-check-label" for="{{ form.restitution_required.id_for_label }}">
+                Restitution is required under this policy
+              </label>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    {# ══════════════════════════════════════════════════════════
+       Section 3 — Version & Status
+       ══════════════════════════════════════════════════════════ #}
+    <div class="card mb-4">
+      <div class="card-header policy-form-section-header">
+        <span class="policy-form-step">3</span>
+        <div>
+          <h2 class="card-title mb-0">Version &amp; Status</h2>
+          <p class="text-secondary small mb-0">Track the version and publication status of this entry.</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+
+          {# Policy version #}
+          <div class="col-12 col-md-6">
+            <label class="form-label" for="{{ form.policy_version.id_for_label }}">
+              Version Number
+            </label>
+            {{ form.policy_version }}
+            {% if form.policy_version.errors %}
+            <div class="invalid-feedback d-block">{{ form.policy_version.errors|join:", " }}</div>
+            {% endif %}
+            <div class="form-hint">
+              E.g. <em>2024-A</em>. If a policy has been used in a live case, create a new version
+              rather than overwriting. Leave as "Pending school approval" until formally approved.
+            </div>
+          </div>
+
+          {# Active / status #}
+          <div class="col-12 col-md-6 d-flex flex-column justify-content-center">
+            <label class="form-label">Publication Status</label>
+            <div class="form-check form-switch mt-1">
+              {{ form.active }}
+              <label class="form-check-label" for="{{ form.active.id_for_label }}">
+                Active — visible to authorized users
+              </label>
+            </div>
+            <div class="form-hint mt-1">
+              <i class="fas fa-triangle-exclamation text-warning me-1" aria-hidden="true"></i>
+              Only activate after the school has reviewed and approved this entry.
+            </div>
+          </div>
+
+          {# Notes #}
+          <div class="col-12">
+            <label class="form-label" for="{{ form.notes.id_for_label }}">
+              Internal Notes
+            </label>
+            {{ form.notes }}
+            {% if form.notes.errors %}
+            <div class="invalid-feedback d-block">{{ form.notes.errors|join:", " }}</div>
+            {% endif %}
+            <div class="form-hint">Visible to authorized administrators only. Not shown to staff or students.</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    {# ══════════════════════════════════════════════════════════
+       Section 4 — Review & Save
+       ══════════════════════════════════════════════════════════ #}
+    <div class="card mb-5">
+      <div class="card-header policy-form-section-header">
+        <span class="policy-form-step">4</span>
+        <div>
+          <h2 class="card-title mb-0">Review &amp; Save</h2>
+          <p class="text-secondary small mb-0">Confirm all details are correct before saving.</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="alert alert-info d-flex gap-2 align-items-start mb-4" role="note">
+          <i class="fas fa-info-circle mt-1 flex-shrink-0" aria-hidden="true"></i>
+          <div>
+            <strong>Reminder:</strong> This form creates a classification entry for authorized internal use.
+            Saving this entry does not impose any penalty on a student. All disciplinary decisions
+            require a separate authorised review process.
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 justify-content-between">
+          <a href="{% url 'discipline:policy_list' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-2" aria-hidden="true"></i>Cancel
+          </a>
+          <div class="d-flex gap-2">
+            {# Save as inactive (draft) #}
+            <button type="submit"
+                    class="btn btn-outline-primary"
+                    onclick="document.getElementById('id_active').checked = false;"
+                    formnovalidate>
+              <i class="fas fa-floppy-disk me-2" aria-hidden="true"></i>Save as Draft
+            </button>
+            {# Save and activate #}
+            <button type="submit"
+                    class="btn btn-accent policy-add-btn"
+                    onclick="document.getElementById('id_active').checked = true;">
+              <i class="fas fa-circle-check me-2" aria-hidden="true"></i>Save &amp; Activate
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </form>
+</main>
+{% endblock %}
