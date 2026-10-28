@@ -2,7 +2,7 @@
 {% block title %}User Management | Discipline Office{% endblock %}
 
 {% block content %}
-<div class="container-xl">
+<main class="container-xl dh-user-management">
 
   {# ── Breadcrumb ────────────────────────────────────────────── #}
   <nav aria-label="breadcrumb" class="mb-2">
@@ -244,11 +244,8 @@
     {% endif %}
   </div>
 
-</div>{# /container-xl #}
+</main>
 
-{# ═══════════════════════════════════════════════════════════
-   Edit / Create User Modal
-   ═══════════════════════════════════════════════════════════ #}
 <div class="modal modal-blur fade" id="editUserModal" tabindex="-1" aria-labelledby="editUserModalTitle" aria-hidden="true">
   <div class="modal-dialog modal-md modal-dialog-centered">
     <div class="modal-content">
@@ -351,9 +348,6 @@
   </div>
 </div>
 
-{# ═══════════════════════════════════════════════════════════
-   Delete User Modal
-   ═══════════════════════════════════════════════════════════ #}
 <div class="modal modal-blur fade" id="deleteUserModal" tabindex="-1" aria-labelledby="deleteUserModalTitle" aria-hidden="true">
   <div class="modal-dialog modal-sm modal-dialog-centered">
     <div class="modal-content">

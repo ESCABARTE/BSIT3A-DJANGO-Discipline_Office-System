@@ -7,6 +7,15 @@ from apps.discipline.models import CaseReport, DisciplinaryCase
 
 
 class HomeViewTests(TestCase):
+    def test_login_page_renders_split_kcc_branding_and_sign_in_panel(self):
+        response = self.client.get(reverse('login'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'KCC Discipline Office System')
+        self.assertContains(response, 'Welcome Back!')
+        self.assertContains(response, 'login-identity-medallion')
+        self.assertContains(response, 'login-form-logo')
+
     def test_home_renders_for_authenticated_user(self):
         user = get_user_model().objects.create_user(username='admin', password='secret1234')
 

@@ -15,7 +15,7 @@
 	 * This will prevent any flashes of the light theme (default) before switching.
 	 */
 	const themeConfig = {
-	  "theme": "light",
+	  "theme": "dark",
 	  "theme-base": "gray",
 	  "theme-font": "sans-serif",
 	  "theme-primary": "indigo",

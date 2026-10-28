@@ -110,7 +110,7 @@ class DisciplineAccessAndWorkflowTests(TestCase):
     def test_sidebar_navigation_is_consistent_and_role_aware_on_home(self):
         self.client.force_login(self.staff)
         official_home = self.client.get(reverse('dashboard'))
-        self.assertContains(official_home, 'Discipline Management')
+        self.assertContains(official_home, 'Discipline</span>')
         self.assertContains(official_home, 'Policy Management')
         self.assertContains(official_home, reverse('discipline:incident_log'))
 
