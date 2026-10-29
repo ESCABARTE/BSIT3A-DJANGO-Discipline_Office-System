@@ -1,47 +1,308 @@
 {% extends "theme/base.html" %}
+{% load static %}
 {% block title %}{{ case.reference }} | Discipline Office{% endblock %}
 {% block content %}
-<main class="container-xl"><div class="page-header mb-4"><div class="d-flex flex-wrap align-items-center justify-content-between gap-3 w-100"><div><div class="page-pretitle">{{ case.get_source_type_display }} · {{ case.reference }}</div><h1 class="page-title mb-1">Case status</h1><div class="d-flex flex-wrap gap-2"><span class="badge bg-primary-lt">{{ case.get_status_display }}</span>{% if can_view_confidential %}<span class="badge bg-secondary-lt">{{ case.get_finding_display }}</span>{% endif %}</div></div><div class="d-flex flex-wrap gap-2"><a class="btn btn-outline-secondary" href="{% url 'discipline:case_list' %}">Back to cases</a>{% if can_review %}<a class="btn btn-primary" href="{% url 'discipline:case_action' case.pk %}">Record review action</a><a class="btn btn-outline-primary" href="{% url 'discipline:stage_create' case.pk %}">Add stage</a><a class="btn btn-outline-primary" href="{% url 'discipline:summons_create' case.pk %}">Record summons</a>{% endif %}{% if can_submit_answer %}<a class="btn btn-outline-primary" href="{% url 'discipline:answer_submit' case.pk %}">Submit answer</a>{% endif %}</div></div></div>
-<div class="alert alert-warning" role="note"><strong>Due process:</strong> A complaint, incident report, or missed deadline is not a finding of responsibility. Final decisions require documented authorization.</div>
-{% if can_view_confidential %}
-<section class="card mb-3">
-  <div class="card-header"><h2 class="card-title">Restricted evidence</h2></div>
-  <div class="list-group list-group-flush">
-    {% for document in case_documents %}
-      <a class="list-group-item list-group-item-action" href="{% url 'discipline:case_document_download' case.pk document.pk %}">
-        {{ document.original_name }} <span class="text-secondary small">· Uploaded {{ document.uploaded_at|date:'M j, Y · g:i A' }}</span>
-      </a>
-    {% empty %}
-      <div class="list-group-item text-secondary">No evidence attached.</div>
-    {% endfor %}
-  </div>
-</section>
-<section class="card mb-3">
-  <div class="card-header"><h2 class="card-title">Reporting person and student</h2></div>
-  <div class="card-body">
-    <dl class="row mb-0">
-      <dt class="col-sm-4">Reporting person</dt>
-      <dd class="col-sm-8">{{ case.report.submitted_by.get_full_name|default:case.report.submitted_by.username }}</dd>
-      <dt class="col-sm-4">Position / relationship</dt>
-      <dd class="col-sm-8">{{ case.report.reporting_position|default:'Complaint submitter' }}</dd>
-      {% if case.report.complainant_name %}
-        <dt class="col-sm-4">Complainant</dt>
-        <dd class="col-sm-8">{{ case.report.complainant_name }}{% if case.report.complainant_student_id %} · {{ case.report.complainant_student_id }}{% endif %}</dd>
+<main class="container-xl">
+  {% include 'theme/messages.html' %}
+  <header class="page-header mb-4">
+    <div>
+      <div class="page-pretitle">{{ case.get_source_type_display }}</div>
+      <h1 class="page-title mb-2 font-monospace">{{ case.reference }}</h1>
+      <div class="d-flex flex-wrap gap-2">
+        <span class="badge bg-primary-lt">{{ case.get_status_display }}</span>
+        {% if can_view_confidential %}
+          <span class="badge bg-secondary-lt">{{ case.get_finding_display }}</span>
+          {% if case.classification %}
+            <span class="badge bg-warning-lt">{{ case.get_classification_display }} · {% if case.classification_reviewed %}Reviewed{% else %}Preliminary{% endif %}</span>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+    <div class="d-flex flex-wrap gap-2 ms-auto">
+      <a class="btn btn-outline-secondary" href="{% url 'discipline:case_list' %}">Back to cases</a>
+      {% if can_review %}
+        <a class="btn btn-primary" href="{% url 'discipline:case_action' case.pk %}">Review Case / Record Recommendation</a>
+        <a class="btn btn-outline-primary" href="{% url 'discipline:case_classify' case.pk %}">Update Classification</a>
+        {% if status_transition_available %}<a class="btn btn-outline-primary" href="{% url 'discipline:case_status_update' case.pk %}">Update Case Status</a>{% endif %}
+        <a class="btn btn-outline-primary" href="{% url 'discipline:case_receive' case.pk %}">Record Complaint Receipt</a>
+        <a class="btn btn-outline-primary" href="{% url 'discipline:stage_create' case.pk %}">Add Review Stage</a>
+        {% if has_respondent %}<a class="btn btn-outline-primary" href="{% url 'discipline:summons_create' case.pk %}">Prepare Summons</a>{% endif %}
       {% endif %}
-      <dt class="col-sm-4">Student / respondent</dt>
-      <dd class="col-sm-8">{{ case.report.respondent_name|default:'Not identified' }}{% if case.report.respondent_student_id %} · {{ case.report.respondent_student_id }}{% endif %}</dd>
-      {% if case.report.respondent_program or case.report.respondent_year_section %}
-        <dt class="col-sm-4">Programme / year-section</dt>
-        <dd class="col-sm-8">{{ case.report.respondent_program }}{% if case.report.respondent_year_section %} · {{ case.report.respondent_year_section }}{% endif %}</dd>
+      {% if can_finalize_decision and decision_eligible %}
+        <a class="btn btn-accent" href="{% url 'discipline:case_decision' case.pk %}">{% if visible_decisions %}Update Decision{% else %}Record Decision{% endif %}</a>
       {% endif %}
-    </dl>
+      {% if can_submit_answer %}<a class="btn btn-outline-primary" href="{% url 'discipline:answer_submit' case.pk %}">Submit Answer</a>{% endif %}
+    </div>
+  </header>
+
+  <div class="alert alert-warning" role="note">
+    <strong>Due process:</strong> A complaint, incident report, or missed deadline is not a finding of responsibility. Preliminary classification is not a final decision.
   </div>
-</section>
-{% endif %}
-<div class="row g-3"><div class="col-12 col-xl-7"><section class="card mb-3"><div class="card-header"><h2 class="card-title">{% if can_view_confidential %}Report information{% else %}Case status{% endif %}</h2></div><div class="card-body">{% if can_view_confidential %}<dl class="row mb-0"><dt class="col-sm-4">Report type</dt><dd class="col-sm-8">{{ case.report.get_report_type_display }}</dd><dt class="col-sm-4">Submitted</dt><dd class="col-sm-8">{{ case.report.submitted_at|date:'M j, Y · g:i A' }}</dd>{% if is_reporter %}<dt class="col-sm-4">Complainant</dt><dd class="col-sm-8">{{ case.report.complainant_name }}</dd>{% endif %}<dt class="col-sm-4">Respondent</dt><dd class="col-sm-8">{{ case.report.respondent_name|default:'Not identified' }}{% if case.report.respondent_student_id %} · {{ case.report.respondent_student_id }}{% endif %}</dd><dt class="col-sm-4">Incident date / place</dt><dd class="col-sm-8">{{ case.report.incident_at|date:'M j, Y · g:i A'|default:'Not recorded' }}{% if case.report.incident_place %} · {{ case.report.incident_place }}{% endif %}</dd><dt class="col-sm-4">Narrative</dt><dd class="col-sm-8 text-break">{{ case.report.narration|linebreaksbr }}</dd>{% if case.report.witness_information %}<dt class="col-sm-4">Witness information</dt><dd class="col-sm-8">{{ case.report.witness_information|linebreaksbr }}</dd>{% endif %}</dl>{% else %}<dl class="row mb-0"><dt class="col-sm-4">Reference</dt><dd class="col-sm-8">{{ case.reference }}</dd><dt class="col-sm-4">Status</dt><dd class="col-sm-8">{{ case.get_status_display }}</dd><dt class="col-sm-4">Submitted</dt><dd class="col-sm-8">{{ case.opened_at|date:'M j, Y' }}</dd></dl>{% endif %}</div></section>
-<section class="card mb-3"><div class="card-header"><h2 class="card-title">Procedural timeline</h2></div><div class="list-group list-group-flush">{% for stage in case.stages.all %}<div class="list-group-item"><div class="d-flex justify-content-between gap-2"><strong>{{ stage.stage }}</strong><span class="badge bg-secondary-lt">{{ stage.status }}</span></div><div class="text-secondary small">{{ stage.created_at|date:'M j, Y' }}{% if stage.due_date %} · Due {{ stage.due_date }}{% endif %}{% if stage.responsible %} · {{ stage.responsible.get_full_name|default:stage.responsible.username }}{% endif %}</div>{% if can_view_confidential and stage.notes %}<p class="mb-0 mt-1">{{ stage.notes|linebreaksbr }}</p>{% endif %}</div>{% empty %}<div class="list-group-item text-secondary">No additional procedural stages recorded.</div>{% endfor %}</div></section>
-{% if can_view_audit or can_submit_answer %}<section class="card mb-3"><div class="card-header"><h2 class="card-title">Summons and answers</h2></div><div class="card-body">{% for summons in case.summonses.all %}<div class="border-bottom pb-3 mb-3"><strong>{{ summons.respondent.name }}</strong><div class="text-secondary">Issued {{ summons.issued_at|date:'M j, Y' }} · Served {{ summons.served_at|date:'M j, Y'|default:'not recorded' }} · Receipt {{ summons.received_at|date:'M j, Y'|default:'not recorded' }}</div>{% if summons.response_due %}<div>Three-school-day deadline: {{ summons.effective_due_date }} · {{ summons.deadline_state }}</div>{% endif %}{% if can_review %}<a class="btn btn-sm btn-outline-primary mt-2" href="{% url 'discipline:summons_serve' case.pk summons.pk %}">Update service details</a><a class="btn btn-sm btn-outline-secondary mt-2" href="{% url 'discipline:summons_extension' case.pk summons.pk %}">Record approved extension</a>{% endif %}</div>{% empty %}<p class="text-secondary mb-0">No summons recorded.</p>{% endfor %}{% for answer in case.answers.all %}<div class="mb-3"><strong>Respondent answer</strong><div class="text-secondary">Submitted {{ answer.submitted_at|date:'M j, Y · g:i A' }} · Deadline status: {% if answer.received_within_deadline %}within recorded deadline{% elif answer.received_within_deadline == False %}after recorded deadline (review required){% else %}no receipt deadline recorded{% endif %}</div><p>{{ answer.explanation|linebreaksbr }}</p></div>{% empty %}<p class="text-secondary">No answer submitted yet. A missed deadline does not determine responsibility.</p>{% endfor %}</div></section>{% endif %}</div>
-<div class="col-12 col-xl-5">{% if can_view_audit %}<section class="card mb-3"><div class="card-header"><h2 class="card-title">Confidential review</h2></div><div class="card-body"><dl class="row mb-0"><dt class="col-sm-5">Finding</dt><dd class="col-sm-7">{{ case.get_finding_display }}</dd><dt class="col-sm-5">Recommendation</dt><dd class="col-sm-7">{{ case.recommendation|default:'None recorded'|linebreaksbr }}</dd>{% if case.decision_authority %}<dt class="col-sm-5">Decision authority</dt><dd class="col-sm-7">{{ case.decision_authority }} · {{ case.decision_date }}</dd><dt class="col-sm-5">Decision notes</dt><dd class="col-sm-7">{{ case.decision_notes|linebreaksbr }}</dd>{% endif %}</dl></div></section>
-<section class="card mb-3"><div class="card-header"><h2 class="card-title">Case actions</h2></div><div class="list-group list-group-flush">{% for action in visible_actions %}<div class="list-group-item"><strong>{{ action.get_action_type_display }}</strong><div class="text-secondary small">{{ action.created_at|date:'M j, Y · g:i A' }} · {{ action.actor.get_full_name|default:action.actor.username }}{% if action.authority %} · {{ action.authority }}{% endif %}</div>{% if action.details %}<div>{{ action.details|linebreaksbr }}</div>{% endif %}</div>{% empty %}<div class="list-group-item text-secondary">No review actions recorded.</div>{% endfor %}</div></section>
-<section class="card"><div class="card-header"><h2 class="card-title">Access audit</h2></div><div class="list-group list-group-flush">{% for entry in case.audit_logs.all|slice:':20' %}<div class="list-group-item"><strong>{{ entry.action }}</strong><div class="text-secondary small">{{ entry.actor.get_full_name|default:entry.actor.username }} · {{ entry.created_at|date:'M j, Y · g:i A' }}</div></div>{% empty %}<div class="list-group-item text-secondary">No access log entries.</div>{% endfor %}</div></section>{% else %}<section class="card"><div class="card-header"><h2 class="card-title">What happens next</h2></div><div class="card-body"><p>{% if is_reporter %}Your submission is available to authorized Discipline Office personnel for review.{% else %}The school will provide the authorized notice and opportunity to respond through the documented process.{% endif %}</p><p class="mb-0">Confidential findings, witness information, committee deliberations, and decisions are visible only to authorized officials. A report or missed deadline is not a finding of responsibility.</p></div></section>{% endif %}</div></div></main>
+  {% if can_finalize_decision and not decision_eligible %}
+    <div class="alert alert-info" role="status">A final decision is not available yet. Complete the review and set the case to Awaiting final decision or Appeal / reconsideration.</div>
+  {% endif %}
+
+  {% if can_view_confidential %}
+    <div class="row g-3">
+      <div class="col-12 col-xl-7">
+        <section class="card mb-3">
+          <div class="card-header"><h2 class="card-title">Case Overview</h2></div>
+          <div class="card-body">
+            <dl class="row mb-0">
+              <dt class="col-sm-4">Reference</dt><dd class="col-sm-8 font-monospace">{{ case.reference }}</dd>
+              <dt class="col-sm-4">Current status</dt><dd class="col-sm-8">{{ case.get_status_display }}</dd>
+              <dt class="col-sm-4">Report type</dt><dd class="col-sm-8">{{ case.report.get_report_type_display }}</dd>
+              <dt class="col-sm-4">Submitted</dt><dd class="col-sm-8">{{ case.report.submitted_at|date:'M j, Y · g:i A' }}</dd>
+              <dt class="col-sm-4">Assigned staff</dt><dd class="col-sm-8">{% if case.assigned_officer %}{{ case.assigned_officer.get_full_name|default:case.assigned_officer.username }}{% else %}Not assigned{% endif %}</dd>
+              {% if case.closed_at %}<dt class="col-sm-4">Closed</dt><dd class="col-sm-8">{{ case.closed_at|date:'M j, Y · g:i A' }}</dd>{% endif %}
+            </dl>
+          </div>
+        </section>
+
+        <section class="card mb-3">
+          <div class="card-header"><h2 class="card-title">Student / Respondent Information</h2></div>
+          <div class="card-body">
+            <dl class="row mb-0">
+              <dt class="col-sm-4">Name</dt><dd class="col-sm-8">{{ case.report.respondent_name|default:'Not identified' }}</dd>
+              <dt class="col-sm-4">Student number</dt><dd class="col-sm-8">{{ case.report.respondent_student_id|default:'Not recorded' }}</dd>
+              <dt class="col-sm-4">Program</dt><dd class="col-sm-8">{{ case.report.respondent_program|default:'Not recorded' }}</dd>
+              <dt class="col-sm-4">Year / section</dt><dd class="col-sm-8">{{ case.report.respondent_year_section|default:'Not recorded' }}</dd>
+            </dl>
+          </div>
+        </section>
+
+        <section class="card mb-3">
+          <div class="card-header"><h2 class="card-title">Complainant and Reporting Person</h2></div>
+          <div class="card-body">
+            <dl class="row mb-0">
+              <dt class="col-sm-4">Complainant</dt><dd class="col-sm-8">{{ case.report.complainant_name|default:case.report.submitted_by.get_full_name|default:case.report.submitted_by.username }}</dd>
+              <dt class="col-sm-4">Role / relationship</dt><dd class="col-sm-8">{{ case.report.complainant_relationship|default:case.report.reporting_position|default:'Not recorded' }}</dd>
+              <dt class="col-sm-4">Student / employee no.</dt><dd class="col-sm-8">{{ case.report.complainant_student_id|default:'Not recorded' }}</dd>
+              <dt class="col-sm-4">Contact</dt><dd class="col-sm-8">{{ case.report.complainant_contact|default:'Not recorded' }}</dd>
+              <dt class="col-sm-4">Reporting method</dt><dd class="col-sm-8">{{ case.report.get_report_type_display }}{% if case.report.reporting_method %} · {{ case.report.reporting_method|title }}{% endif %}</dd>
+              <dt class="col-sm-4">Submitted</dt><dd class="col-sm-8">{{ case.report.submitted_at|date:'M j, Y · g:i A' }}</dd>
+            </dl>
+          </div>
+        </section>
+
+        <section class="card mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center gap-2">
+            <h2 class="card-title mb-0">Complaint-Receiving Staff</h2>
+            {% if can_review %}<a class="btn btn-sm btn-outline-primary" href="{% url 'discipline:case_receive' case.pk %}">Update Receipt Details</a>{% endif %}
+          </div>
+          <div class="card-body">
+            <dl class="row mb-0">
+              <dt class="col-sm-4">Received by</dt><dd class="col-sm-8">{% if case.report.received_by %}{{ case.report.received_by.get_full_name|default:case.report.received_by.username }}{% else %}Not yet recorded{% endif %}</dd>
+              <dt class="col-sm-4">Position</dt><dd class="col-sm-8">{{ case.report.receiving_position|default:'Not recorded' }}</dd>
+              <dt class="col-sm-4">Received at</dt><dd class="col-sm-8">{{ case.report.received_at|date:'M j, Y · g:i A'|default:'Not recorded' }}</dd>
+              {% if case.report.intake_notes %}<dt class="col-sm-4">Intake notes</dt><dd class="col-sm-8">{{ case.report.intake_notes|linebreaksbr }}</dd>{% endif %}
+            </dl>
+          </div>
+        </section>
+
+        <section class="card mb-3">
+          <div class="card-header"><h2 class="card-title">Incident and Classification</h2></div>
+          <div class="card-body">
+            <dl class="row mb-0">
+              <dt class="col-sm-4">Incident date / time</dt><dd class="col-sm-8">{{ case.report.incident_at|date:'M j, Y · g:i A'|default:'Not recorded' }}</dd>
+              <dt class="col-sm-4">Location</dt><dd class="col-sm-8">{{ case.report.incident_place|default:'Not recorded' }}</dd>
+              <dt class="col-sm-4">Submitted narrative (unverified)</dt><dd class="col-sm-8 text-break">{{ case.report.narration|linebreaksbr }}</dd>
+              {% if case.report.witness_information %}<dt class="col-sm-4">Witness information</dt><dd class="col-sm-8">{{ case.report.witness_information|linebreaksbr }}</dd>{% endif %}
+              <dt class="col-sm-4">Preliminary classification</dt>
+              <dd class="col-sm-8">{% if case.classification %}{{ case.get_classification_display }} · {% if case.classification_reviewed %}Reviewed{% else %}Preliminary; not a final finding{% endif %}{% else %}Not classified{% endif %}</dd>
+              {% if case.offense_category %}
+                <dt class="col-sm-4">Related policy</dt>
+                <dd class="col-sm-8"><a href="{% url 'discipline:policy_detail' case.offense_category.pk %}">{{ case.offense_category.name }}</a>{% if case.offense_category.policy_reference %} · {{ case.offense_category.policy_reference }}{% endif %} · Version {{ case.policy_version }}</dd>
+              {% endif %}
+              {% if case.classification_basis %}<dt class="col-sm-4">Classification basis</dt><dd class="col-sm-8">{{ case.classification_basis|linebreaksbr }}</dd>{% endif %}
+              {% if case.classification_remarks %}<dt class="col-sm-4">Classification remarks</dt><dd class="col-sm-8">{{ case.classification_remarks|linebreaksbr }}</dd>{% endif %}
+              {% if case.classified_by %}<dt class="col-sm-4">Classified by</dt><dd class="col-sm-8">{{ case.classified_by.get_full_name|default:case.classified_by.username }} · {{ case.classified_at|date:'M j, Y · g:i A' }}</dd>{% endif %}
+            </dl>
+          </div>
+        </section>
+
+        <section class="card mb-3">
+          <div class="card-header"><h2 class="card-title">Investigation and Review</h2></div>
+          <div class="list-group list-group-flush">
+            {% for stage in case.stages.all %}
+              <div class="list-group-item">
+                <div class="d-flex justify-content-between gap-2"><strong>{{ stage.stage }}</strong><span class="badge bg-secondary-lt">{{ stage.status }}</span></div>
+                <div class="text-secondary small">{{ stage.created_at|date:'M j, Y · g:i A' }}{% if stage.due_date %} · Due {{ stage.due_date }}{% endif %}{% if stage.responsible %} · {{ stage.responsible.get_full_name|default:stage.responsible.username }}{% endif %}</div>
+                {% if stage.notes %}<p class="mb-0 mt-1">{{ stage.notes|linebreaksbr }}</p>{% endif %}
+              </div>
+            {% empty %}<div class="list-group-item text-secondary">No review stages recorded.</div>{% endfor %}
+          </div>
+        </section>
+
+        <section class="card mb-3">
+          <div class="card-header"><h2 class="card-title">Recommendation and Final Decision</h2></div>
+          <div class="card-body">
+            <p><strong>Current recommendation</strong><br>{{ case.recommendation|default:'No recommendation recorded.'|linebreaksbr }}</p>
+            <p><strong>Current finding</strong><br>{{ case.get_finding_display }}</p>
+            {% if visible_decisions %}
+              <h3 class="h4 mt-4">Decision History</h3>
+              <div class="list-group">
+                {% for action in visible_decisions %}
+                  <article class="list-group-item">
+                    <div class="d-flex flex-wrap justify-content-between gap-2"><strong>{{ action.decision_outcome }}</strong><span class="text-secondary small">{{ action.created_at|date:'M j, Y · g:i A' }}</span></div>
+                    <div>{{ action.get_finding_display }} · {{ action.authority }}{% if action.authority_position %}, {{ action.authority_position }}{% endif %}</div>
+                    <p class="mb-1">{{ action.details|linebreaksbr }}</p>
+                    <div class="text-secondary small">Recorded by {{ action.actor.get_full_name|default:action.actor.username }}</div>
+                  </article>
+                {% endfor %}
+              </div>
+            {% else %}
+              <p class="text-secondary mb-0">No final decision recorded.</p>
+            {% endif %}
+            {% if can_finalize_decision and not decision_eligible %}
+              <div class="alert alert-info mt-3 mb-0">A final decision is not yet eligible. Complete review and update the status before recording a decision.</div>
+            {% endif %}
+          </div>
+        </section>
+
+        <section class="card mb-3">
+          <div class="card-header"><h2 class="card-title">Case Status and History</h2></div>
+          <div class="card-body"><div class="mb-3"><strong>Current status:</strong> {{ case.get_status_display }}</div>
+            <div class="list-group">
+              {% for action in status_history %}
+                <div class="list-group-item">
+                  <strong>{% if action.from_status %}{{ action.get_from_status_display }} → {% endif %}{{ action.get_to_status_display|default:case.get_status_display }}</strong>
+                  <div class="text-secondary small">{{ action.created_at|date:'M j, Y · g:i A' }} · {{ action.actor.get_full_name|default:action.actor.username }}</div>
+                  {% if action.details %}<div>{{ action.details|linebreaksbr }}</div>{% endif %}
+                </div>
+              {% empty %}<div class="list-group-item text-secondary">No status changes recorded.</div>{% endfor %}
+            </div>
+          </div>
+        </section>
+
+        <section class="card mb-3">
+          <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h2 class="card-title mb-0">Parent/Guardian Summons and Hearing</h2>
+            {% if can_review and has_respondent %}<a class="btn btn-sm btn-primary" href="{% url 'discipline:summons_create' case.pk %}">Prepare Summons</a>{% endif %}
+          </div>
+          <div class="list-group list-group-flush">
+            {% for summons in visible_summonses %}
+              <article class="list-group-item">
+                <div class="d-flex flex-wrap justify-content-between gap-2"><strong>{{ summons.reference }}</strong><span class="badge {% if summons.approved_at %}bg-success-lt{% else %}bg-warning-lt{% endif %}">{% if summons.approved_at %}Approved{% else %}Pending approval{% endif %}</span></div>
+                <div>Student: {{ summons.respondent.name }}{% if summons.respondent.student_id %} · {{ summons.respondent.student_id }}{% endif %}</div>
+                <div>Parent / guardian: {{ summons.guardian_name }}{% if summons.guardian_relationship %} · {{ summons.guardian_relationship }}{% endif %}</div>
+                <div>Hearing: {{ summons.hearing_at|date:'M j, Y · g:i A' }} · {{ summons.hearing_location }}</div>
+                <div class="text-secondary small">Prepared by {{ summons.issued_by.get_full_name|default:summons.issued_by.username }} · {{ summons.issued_at|date:'M j, Y · g:i A' }}</div>
+                {% if summons.approved_at %}<div class="text-secondary small">Approved by {{ summons.approved_by.get_full_name|default:summons.approved_by.username }} · {{ summons.approved_by_position }} · {{ summons.approved_at|date:'M j, Y · g:i A' }}</div>{% endif %}
+                <div>Service: {{ summons.served_at|date:'M j, Y · g:i A'|default:'Not served' }} · Receipt: {{ summons.received_at|date:'M j, Y'|default:'Not recorded' }}{% if summons.acknowledgment %} · Acknowledged{% endif %}</div>
+                {% if summons.response_due %}<div>Response deadline: {{ summons.effective_due_date }} · {{ summons.deadline_state }}</div>{% endif %}
+                <div class="d-flex flex-wrap gap-2 mt-3">
+                  <a class="btn btn-sm btn-outline-secondary" href="{% url 'discipline:summons_preview' case.pk summons.pk %}">Preview Summons</a>
+                  {% if summons.approved_at %}
+                    <form method="post" action="{% url 'discipline:summons_print' case.pk summons.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary" type="submit">Print Summons</button></form>
+                  {% else %}
+                    <span class="text-secondary small align-self-center">Printing is available after authorization.</span>
+                  {% endif %}
+                  {% if can_review %}
+                    {% if not summons.served_at %}<a class="btn btn-sm btn-outline-primary" href="{% url 'discipline:summons_edit' case.pk summons.pk %}">Update Summons</a>{% endif %}
+                    {% if summons.approved_at %}<a class="btn btn-sm btn-outline-primary" href="{% url 'discipline:summons_serve' case.pk summons.pk %}">{% if summons.served_at %}Update Service Details{% else %}Record Service Details{% endif %}</a>{% endif %}
+                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'discipline:summons_extension' case.pk summons.pk %}">Record Approved Extension</a>
+                  {% endif %}
+                  {% if can_finalize_decision and not summons.approved_at %}
+                    <form method="post" action="{% url 'discipline:summons_approve' case.pk summons.pk %}">{% csrf_token %}<label class="visually-hidden" for="approver-position-{{ summons.pk }}">Approver position</label><select class="form-select form-select-sm" id="approver-position-{{ summons.pk }}" name="approved_by_position" required>{% for value, label in summons_approval_form.approved_by_position.field.choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select><button class="btn btn-sm btn-warning mt-1" type="submit">Approve Summons</button></form>
+                  {% endif %}
+                  {% if summons.served_at and summons.acknowledgment %}
+                    <form method="post" action="{% url 'discipline:summons_receipt_print' case.pk summons.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary" type="submit">Print Receipt</button></form>
+                  {% endif %}
+                </div>
+              </article>
+            {% empty %}<div class="list-group-item text-secondary">No summons prepared.</div>{% endfor %}
+          </div>
+          {% if summons_history %}
+            <div class="card-body border-top"><h3 class="h4">Service, Approval, and Reprint History</h3>
+              {% for event in summons_history %}
+                <div class="small border-bottom py-2"><strong>{{ event.action|title }}</strong> · {{ event.actor.get_full_name|default:event.actor.username }} · {{ event.created_at|date:'M j, Y · g:i A' }}{% if event.details %}<div>{{ event.details|linebreaksbr }}</div>{% endif %}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </section>
+
+        {% if visible_answers %}
+          <section class="card mb-3">
+            <div class="card-header"><h2 class="card-title">Respondent Answers</h2></div>
+            <div class="list-group list-group-flush">
+              {% for answer in visible_answers %}
+                <article class="list-group-item"><div class="text-secondary small">Submitted {{ answer.submitted_at|date:'M j, Y · g:i A' }}</div><p>{{ answer.explanation|linebreaksbr }}</p></article>
+              {% endfor %}
+            </div>
+          </section>
+        {% endif %}
+      </div>
+
+      <aside class="col-12 col-xl-5">
+        <section class="card mb-3">
+          <div class="card-header"><h2 class="card-title">Classification and Review History</h2></div>
+          <div class="list-group list-group-flush">
+            {% for entry in classification_history %}
+              <div class="list-group-item"><div class="text-secondary small">{{ entry.actor.get_full_name|default:entry.actor.username }} · {{ entry.created_at|date:'M j, Y · g:i A' }}</div>{{ entry.details|linebreaksbr }}</div>
+            {% empty %}<div class="list-group-item text-secondary">No classification changes recorded.</div>{% endfor %}
+          </div>
+        </section>
+
+        <section class="card mb-3">
+          <div class="card-header"><h2 class="card-title">Restricted Evidence</h2></div>
+          <div class="list-group list-group-flush">
+            {% for document in case_documents %}
+              <a class="list-group-item list-group-item-action" href="{% url 'discipline:case_document_download' case.pk document.pk %}">{{ document.original_name }} <span class="text-secondary small">· Uploaded {{ document.uploaded_at|date:'M j, Y · g:i A' }}</span></a>
+            {% empty %}<div class="list-group-item text-secondary">No evidence attached.</div>{% endfor %}
+          </div>
+        </section>
+
+        <section class="card mb-3">
+          <div class="card-header"><h2 class="card-title">Confidential Review</h2></div>
+          <div class="card-body">
+            <dl class="row mb-0">
+              <dt class="col-sm-5">Finding</dt><dd class="col-sm-7">{{ case.get_finding_display }}</dd>
+              <dt class="col-sm-5">Recommendation</dt><dd class="col-sm-7">{{ case.recommendation|default:'None recorded'|linebreaksbr }}</dd>
+              {% if case.decision_authority %}<dt class="col-sm-5">Decision-maker</dt><dd class="col-sm-7">{{ case.decision_authority }} · {{ case.decision_date }}</dd>{% endif %}
+              {% if case.decision_notes %}<dt class="col-sm-5">Decision notes</dt><dd class="col-sm-7">{{ case.decision_notes|linebreaksbr }}</dd>{% endif %}
+            </dl>
+          </div>
+        </section>
+
+        <section class="card mb-3">
+          <div class="card-header"><h2 class="card-title">Case Action History</h2></div>
+          <div class="list-group list-group-flush">
+            {% for action in visible_actions %}
+              <article class="list-group-item">
+                <strong>{{ action.get_action_type_display }}</strong>
+                <div class="text-secondary small">{{ action.created_at|date:'M j, Y · g:i A' }} · {{ action.actor.get_full_name|default:action.actor.username }}{% if action.authority_position %} · {{ action.authority_position }}{% endif %}</div>
+                {% if action.recommendation %}<div>{{ action.recommendation|linebreaksbr }}</div>{% endif %}
+                {% if action.details %}<div>{{ action.details|linebreaksbr }}</div>{% endif %}
+              </article>
+            {% empty %}<div class="list-group-item text-secondary">No review actions recorded.</div>{% endfor %}
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header"><h2 class="card-title">Access Audit</h2></div>
+          <div class="list-group list-group-flush">
+            {% for entry in case.audit_logs.all|slice:':20' %}
+              <div class="list-group-item"><strong>{{ entry.action }}</strong><div class="text-secondary small">{{ entry.actor.get_full_name|default:entry.actor.username }} · {{ entry.created_at|date:'M j, Y · g:i A' }}{% if entry.details %}<div>{{ entry.details|linebreaksbr }}</div>{% endif %}</div></div>
+            {% empty %}<div class="list-group-item text-secondary">No access log entries.</div>{% endfor %}
+          </div>
+        </section>
+      </aside>
+    </div>
+  {% else %}
+    <section class="card">
+      <div class="card-header"><h2 class="card-title">Case status</h2></div>
+      <div class="card-body">
+        <dl class="row mb-0"><dt class="col-sm-4">Reference</dt><dd class="col-sm-8">{{ case.reference }}</dd><dt class="col-sm-4">Status</dt><dd class="col-sm-8">{{ case.get_status_display }}</dd><dt class="col-sm-4">Submitted</dt><dd class="col-sm-8">{{ case.opened_at|date:'M j, Y' }}</dd></dl>
+        <p class="mt-3 mb-0">{% if is_reporter %}Your submission is available to authorized Discipline Office personnel for review.{% else %}The school will provide the authorized notice and opportunity to respond through the documented process.{% endif %} A report or missed deadline is not a finding of responsibility.</p>
+      </div>
+    </section>
+    {% if can_submit_answer %}
+      <section class="card mt-3"><div class="card-header"><h2 class="card-title">Summons and Answers</h2></div><div class="card-body">
+        {% for summons in visible_summonses %}<p>Issued {{ summons.issued_at|date:'M j, Y' }} · Served {{ summons.served_at|date:'M j, Y'|default:'not recorded' }} · Receipt {{ summons.received_at|date:'M j, Y'|default:'not recorded' }}</p>{% endfor %}
+        {% for answer in visible_answers %}<p>{{ answer.explanation|linebreaksbr }}</p>{% endfor %}
+      </div></section>
+    {% endif %}
+  {% endif %}
+</main>
 {% endblock %}

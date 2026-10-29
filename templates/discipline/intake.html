@@ -21,6 +21,8 @@
 
     $('section-complainant').style.display = type === 'complaint' ? '' : 'none';
     $('section-officer').style.display     = type === 'incident'  ? '' : 'none';
+    const classificationSection = $('section-classification');
+    if (classificationSection) classificationSection.style.display = type === 'incident' ? '' : 'none';
     $('section-form').style.display        = '';
 
     syncRequired(type);
@@ -29,7 +31,7 @@
 
   function syncRequired(type) {
     // Complainant fields
-    ['id_complainant_name', 'id_complainant_student_id'].forEach(id => {
+    ['id_complainant_name', 'id_complainant_relationship', 'id_reporting_method'].forEach(id => {
       const el = $(id);
       if (el) el.required = type === 'complaint';
     });
@@ -140,6 +142,7 @@
   {# ── Unified intake form ──────────────────────────────────── #}
   <form
     id="intake-form"
+    action="{% url 'discipline:intake' %}"
     method="post"
     enctype="multipart/form-data"
     novalidate
@@ -203,7 +206,7 @@
               </div>
               <div class="col-12 col-md-6">
                 <label class="form-label" for="id_complainant_student_id">
-                  Student ID <span class="text-danger" aria-hidden="true">*</span>
+                  Student / employee number (if applicable)
                 </label>
                 {% if form and report_type == 'complaint' %}
                   {{ form.complainant_student_id }}
@@ -227,6 +230,21 @@
                 {% else %}
                   <input type="text" id="id_complainant_year_section" name="complainant_year_section" class="form-control" maxlength="120">
                 {% endif %}
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="id_complainant_relationship">Role / relationship to the school <span class="text-danger" aria-hidden="true">*</span></label>
+                {% if form and report_type == 'complaint' %}{{ form.complainant_relationship }}{% else %}<input type="text" id="id_complainant_relationship" name="complainant_relationship" class="form-control" maxlength="120">{% endif %}
+                {% if form %}{% for e in form.complainant_relationship.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}{% endif %}
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="id_complainant_contact">Contact information</label>
+                {% if form and report_type == 'complaint' %}{{ form.complainant_contact }}{% else %}<input type="text" id="id_complainant_contact" name="complainant_contact" class="form-control" maxlength="180">{% endif %}
+                {% if form %}{% for e in form.complainant_contact.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}{% endif %}
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="id_reporting_method">Reporting method <span class="text-danger" aria-hidden="true">*</span></label>
+                {% if form %}{{ form.reporting_method }}{% else %}<select id="id_reporting_method" name="reporting_method" class="form-select"><option value="">Select reporting method</option><option value="in_person">In person</option><option value="written">Written</option><option value="online">Online</option><option value="other">Other</option></select>{% endif %}
+                {% if form %}{% for e in form.reporting_method.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}{% endif %}
               </div>
             </div>
           </div>
@@ -278,7 +296,7 @@
       {# ── Step 3 — Student / Respondent information ─────────── #}
       <section class="intake-section mb-4" aria-labelledby="step-student-heading">
         <h2 class="intake-section-title" id="step-student-heading">
-          <span class="intake-step-badge">2</span> Student information
+          <span class="intake-step-badge">3</span> Student information
           <span class="text-secondary fs-6 fw-normal ms-2">(if known)</span>
         </h2>
         <div class="card">
@@ -370,6 +388,39 @@
         </div>
       </section>
 
+      {% if can_file_incident and form %}
+        <section id="section-classification" class="intake-section mb-4" aria-labelledby="step-classification-heading">
+          <h2 class="intake-section-title" id="step-classification-heading">
+            <span class="intake-step-badge">4</span> Preliminary classification and policy
+          </h2>
+          <div class="card"><div class="card-body">
+            <div class="alert alert-info">Classification is preliminary and does not establish responsibility or determine an outcome. Use the approved school policy as the factual basis.</div>
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="{{ form.classification.id_for_label }}">Case classification</label>
+                {{ form.classification }}
+                {% for e in form.classification.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="{{ form.offense_category.id_for_label }}">Related policy</label>
+                {{ form.offense_category }}
+                {% for e in form.offense_category.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="{{ form.classification_basis.id_for_label }}">Factual basis</label>
+                {{ form.classification_basis }}
+                {% for e in form.classification_basis.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="{{ form.classification_remarks.id_for_label }}">Classification remarks</label>
+                {{ form.classification_remarks }}
+                {% for e in form.classification_remarks.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+              </div>
+            </div>
+          </div></div>
+        </section>
+      {% endif %}
+
       {# ── Supporting incident information ──────────────────── #}
       <section class="intake-section mb-4" aria-labelledby="step-witness-heading">
         <h2 class="intake-section-title" id="step-witness-heading">
@@ -400,10 +451,10 @@
         </div>
       </section>
 
-      {# ── Step 4 — Acknowledgment & submission ─────────────── #}
+      {# ── Step 5 — Acknowledgment & submission ─────────────── #}
       <section class="intake-section mb-4" aria-labelledby="step-submit-heading">
         <h2 class="intake-section-title" id="step-submit-heading">
-          <span class="intake-step-badge">4</span> Review and submission
+          <span class="intake-step-badge">{% if can_file_incident %}5{% else %}4{% endif %}</span> Review and submission
         </h2>
         <div class="card">
           <div class="card-body">

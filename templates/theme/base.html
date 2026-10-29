@@ -40,6 +40,119 @@
     <script src="{% static 'js/tabler-theme.js' %}"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{% static 'js/tabler.js' %}" defer></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        const sidebar = document.querySelector('.dh-sidebar');
+        const menu = document.getElementById('sidebar-menu');
+        const toggle = document.getElementById('sidebar-toggle');
+        const backdrop = document.querySelector('.dh-sidebar-backdrop');
+        if (!sidebar || !menu || !toggle || !backdrop) return;
+
+        const page = document.querySelector('.page');
+        const desktopQuery = window.matchMedia('(min-width: 992px)');
+        const hoverQuery = window.matchMedia('(hover: hover) and (pointer: fine)');
+        const pinnedKey = 'kcc-sidebar-pinned';
+        let pinned = desktopQuery.matches && sessionStorage.getItem(pinnedKey) === '1';
+        let pointerInside = false;
+        let closeTimer;
+
+        function hideSubmenus() {
+          menu.querySelectorAll('[data-sidebar-submenu]').forEach(function (control) {
+            const target = document.querySelector(control.getAttribute('data-bs-target'));
+            if (!target || !target.classList.contains('show')) return;
+            const collapse = window.bootstrap.Collapse.getOrCreateInstance(target, { toggle: false });
+            collapse.hide();
+          });
+        }
+
+        function setOpen(open, collapseSubmenus) {
+          const isDesktop = desktopQuery.matches;
+          sidebar.classList.toggle('sidebar-open', open);
+          menu.classList.toggle('show', open);
+          toggle.setAttribute('aria-expanded', String(open));
+          toggle.setAttribute('aria-pressed', String(isDesktop && pinned));
+          toggle.setAttribute(
+            'aria-label',
+            isDesktop
+              ? (pinned ? 'Unpin navigation' : 'Pin navigation open')
+              : (open ? 'Close navigation' : 'Open navigation')
+          );
+          toggle.title = isDesktop
+            ? (pinned ? 'Unpin navigation' : 'Pin navigation open')
+            : (open ? 'Close navigation' : 'Open navigation');
+          backdrop.classList.toggle('is-visible', !isDesktop && open);
+          backdrop.tabIndex = !isDesktop && open ? 0 : -1;
+          if (page) page.classList.toggle('sidebar-expanded', isDesktop && open);
+          if (!open && collapseSubmenus) hideSubmenus();
+        }
+
+        setOpen(pinned, false);
+
+        function scheduleClose() {
+          window.clearTimeout(closeTimer);
+          if (pinned || !desktopQuery.matches) return;
+          closeTimer = window.setTimeout(function () {
+            if (!pointerInside && !sidebar.contains(document.activeElement)) {
+              setOpen(false, true);
+            }
+          }, 260);
+        }
+
+        toggle.addEventListener('click', function () {
+          if (desktopQuery.matches) {
+            pinned = !pinned;
+            sessionStorage.setItem(pinnedKey, pinned ? '1' : '0');
+            setOpen(pinned || pointerInside, !pinned && !pointerInside);
+          } else {
+            setOpen(!sidebar.classList.contains('sidebar-open'), false);
+          }
+        });
+        backdrop.addEventListener('click', function () {
+          setOpen(false, false);
+        });
+        sidebar.addEventListener('pointerenter', function () {
+          pointerInside = true;
+          window.clearTimeout(closeTimer);
+          if (desktopQuery.matches && hoverQuery.matches && !pinned) setOpen(true, false);
+        });
+        sidebar.addEventListener('pointerleave', function () {
+          pointerInside = false;
+          scheduleClose();
+        });
+        sidebar.addEventListener('focusin', function () {
+          window.clearTimeout(closeTimer);
+          if (desktopQuery.matches && !pinned) setOpen(true, false);
+        });
+        sidebar.addEventListener('focusout', function (event) {
+          if (!sidebar.contains(event.relatedTarget)) scheduleClose();
+        });
+        menu.querySelectorAll('a[href]').forEach(function (link) {
+          link.addEventListener('click', function () {
+            if (link.matches('[data-bs-toggle="collapse"]')) return;
+            if (!desktopQuery.matches) setOpen(false, false);
+          });
+        });
+        document.addEventListener('keydown', function (event) {
+          if (event.key === 'Escape' && sidebar.classList.contains('sidebar-open')) {
+            if (desktopQuery.matches) {
+              pinned = false;
+              sessionStorage.setItem(pinnedKey, '0');
+              pointerInside = false;
+              setOpen(false, true);
+            } else {
+              setOpen(false, false);
+              toggle.focus();
+            }
+          }
+        });
+        desktopQuery.addEventListener('change', function () {
+          window.clearTimeout(closeTimer);
+          pointerInside = false;
+          pinned = desktopQuery.matches && sessionStorage.getItem(pinnedKey) === '1';
+          setOpen(pinned, !pinned);
+        });
+      });
+    </script>
     {% block extra_js %}{% endblock %}
   </body>
 </html>

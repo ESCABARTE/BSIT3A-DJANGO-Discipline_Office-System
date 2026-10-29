@@ -34,7 +34,7 @@
       <form method="get" role="search" aria-label="Filter cases">
         {% if status_group %}<input type="hidden" name="status_group" value="{{ status_group }}">{% endif %}
         <div class="row g-2 align-items-end">
-          <div class="col-12 col-md-5">
+          <div class="col-12 col-md-4">
             <label class="form-label" for="case-search">Search</label>
             <div class="input-group">
               <span class="input-group-text"><i class="fas fa-search" aria-hidden="true"></i></span>
@@ -61,11 +61,22 @@
               {% endfor %}
             </select>
           </div>
-          <div class="col-12 col-md-3 d-flex gap-2">
+          {% if can_view_confidential and classification_choices %}
+          <div class="col-6 col-md-2">
+            <label class="form-label" for="case-classification">Classification</label>
+            <select id="case-classification" name="classification" class="form-select">
+              <option value="">All classifications</option>
+              {% for value, label in classification_choices %}
+              <option value="{{ value }}" {% if classification_filter == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+          <div class="col-12 {% if can_view_confidential %}col-md-2{% else %}col-md-4{% endif %} d-flex gap-2">
             <button type="submit" class="btn btn-primary flex-fill">
               <i class="fas fa-filter me-1" aria-hidden="true"></i>Filter
             </button>
-            {% if query or status_filter or source_filter or status_group %}
+            {% if query or status_filter or source_filter or classification_filter or status_group %}
             <a href="{% url 'discipline:case_list' %}" class="btn btn-outline-secondary" title="Clear">
               <i class="fas fa-times" aria-hidden="true"></i>
             </a>
@@ -107,7 +118,7 @@
             <th>Student / Respondent</th>
             <th>Date Filed</th>
             <th>Status</th>
-            <th>Finding</th>
+            {% if can_view_confidential %}<th>Classification</th><th>Finding</th>{% endif %}
             <th class="w-1">Action</th>
           </tr>
         </thead>
@@ -145,6 +156,16 @@
                 {{ case.get_status_display }}
               </span>
             </td>
+            {% if can_view_confidential %}
+            <td>
+              {% if case.classification %}
+                <span class="badge {% if case.classification_reviewed %}bg-primary-lt{% else %}bg-warning-lt{% endif %}">
+                  {{ case.get_classification_display }}{% if not case.classification_reviewed %} · Preliminary{% endif %}
+                </span>
+              {% else %}
+                <span class="text-secondary">Not classified</span>
+              {% endif %}
+            </td>
             <td>
               <span class="badge
                 {% if case.finding == 'substantiated' %}bg-danger-lt
@@ -154,6 +175,7 @@
                 {{ case.get_finding_display }}
               </span>
             </td>
+            {% endif %}
             <td>
               <a class="btn btn-sm btn-outline-primary"
                  href="{% url 'discipline:case_detail' case.pk %}">
@@ -163,14 +185,14 @@
           </tr>
           {% empty %}
           <tr>
-            <td colspan="7">
+            <td colspan="{% if can_view_confidential %}8{% else %}6{% endif %}">
               <div class="empty py-5">
                 <div class="empty-icon">
                   <i class="fas fa-folder-open fa-2x text-muted" aria-hidden="true"></i>
                 </div>
                 <p class="empty-title">No cases found</p>
                 <p class="empty-subtitle">
-                  {% if query or status_filter or source_filter or status_group %}
+                  {% if query or status_filter or source_filter or classification_filter or status_group %}
                     Try adjusting your filters.
                     <a href="{% url 'discipline:case_list' %}">Clear filters</a>
                   {% else %}

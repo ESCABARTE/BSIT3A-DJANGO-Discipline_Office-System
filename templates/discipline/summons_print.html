@@ -1,0 +1,102 @@
+{% extends "theme/base.html" %}
+{% load static %}
+{% block title %}Summons {{ summons.reference }} | Discipline Office{% endblock %}
+{% block extra_js %}
+{% if print_on_load %}
+<script>
+  window.addEventListener('load', function () { window.print(); });
+</script>
+{% endif %}
+{% endblock %}
+{% block content %}
+<main class="container-xl py-4">
+  {% if preview %}
+    <div class="d-flex flex-wrap gap-2 mb-3 d-print-none">
+      <a class="btn btn-outline-secondary" href="{% url 'discipline:case_detail' case.pk %}">Back to case</a>
+      {% if summons.approved_at %}
+        <form method="post" action="{% url 'discipline:summons_print' case.pk summons.pk %}">{% csrf_token %}<button class="btn btn-primary" type="submit">Print Summons</button></form>
+      {% else %}
+        <span class="text-secondary align-self-center">Printing is available after authorization.</span>
+      {% endif %}
+    </div>
+  {% endif %}
+  <article class="summons-document mx-auto bg-white text-dark p-4 p-md-5">
+    <header class="text-center border-bottom pb-3 mb-4">
+      <img src="{% static 'images/discipline-office-logo.png' %}" alt="Kabankalan Catholic College logo" class="summons-logo mb-2">
+      <div class="fw-bold">KABANKALAN CATHOLIC COLLEGE</div>
+      <div>Discipline Office</div>
+      <h1 class="h2 mt-3 mb-1">PARENT/GUARDIAN SUMMONS</h1>
+      <div class="small">Summons reference: <span class="font-monospace">{{ summons.reference }}</span></div>
+    </header>
+
+    <dl class="row">
+      <dt class="col-5">Date prepared</dt><dd class="col-7">{{ summons.issued_at|date:'F j, Y · g:i A' }}</dd>
+      <dt class="col-5">Related case reference</dt><dd class="col-7 font-monospace">{{ case.reference }}</dd>
+      <dt class="col-5">Student name</dt><dd class="col-7">{{ summons.respondent.name }}</dd>
+      <dt class="col-5">Student number</dt><dd class="col-7">{{ summons.respondent.student_id|default:'Not recorded' }}</dd>
+      <dt class="col-5">Program / year / section</dt><dd class="col-7">{% if summons.respondent.program %}{{ summons.respondent.program }}{% endif %}{% if summons.respondent.year_section %} · {{ summons.respondent.year_section }}{% endif %}{% if not summons.respondent.program and not summons.respondent.year_section %}Not recorded{% endif %}</dd>
+      <dt class="col-5">Parent / guardian</dt><dd class="col-7">{{ summons.guardian_name }} · {{ summons.guardian_relationship }}</dd>
+      {% if summons.guardian_contact %}<dt class="col-5">Contact</dt><dd class="col-7">{{ summons.guardian_contact }}</dd>{% endif %}
+    </dl>
+
+    <section class="mb-4">
+      <h2 class="h4">Reason for this summons</h2>
+      <p>The Discipline Office requests your attendance regarding a reported incident currently under review. This notice is not a finding of responsibility.</p>
+      <p><strong>Incident date / time:</strong> {{ case.report.incident_at|date:'F j, Y · g:i A'|default:'Not recorded' }}</p>
+      <p><strong>Location:</strong> {{ case.report.incident_place|default:'Not recorded' }}</p>
+      <p><strong>Submitted report narrative (unverified):</strong></p>
+      <p class="summons-factual-summary">{{ case.report.narration|linebreaksbr }}</p>
+    </section>
+
+    <section class="mb-4">
+      <h2 class="h4">Hearing information</h2>
+      <p><strong>Date and time:</strong> {{ summons.hearing_at|date:'F j, Y · g:i A' }}</p>
+      <p><strong>Venue:</strong> {{ summons.hearing_location }}</p>
+      <p><strong>Instructions:</strong><br>{{ summons.instructions|linebreaksbr }}</p>
+    </section>
+
+    <section class="mb-4">
+      <h2 class="h4">Document status and authorization</h2>
+      <p><strong>Prepared by:</strong> {{ summons.issued_by.get_full_name|default:summons.issued_by.username }}</p>
+      {% if summons.approved_at %}
+        <p><strong>Approved by:</strong> {{ summons.approved_by.get_full_name|default:summons.approved_by.username }}, {{ summons.approved_by_position }}</p>
+        <p><strong>Approval date:</strong> {{ summons.approved_at|date:'F j, Y · g:i A' }}</p>
+      {% else %}
+        <p class="border p-2"><strong>Approval:</strong> Pending. This summons has not been recorded as approved.</p>
+      {% endif %}
+      <div class="row mt-4">
+        <div class="col-6"><div class="border-top pt-2 mt-5">Authorized approver signature</div></div>
+        <div class="col-6"><div class="border-top pt-2 mt-5">Date</div></div>
+      </div>
+    </section>
+
+    <section class="mt-5 border-top pt-3">
+      <h2 class="h4">Parent / Guardian Acknowledgment</h2>
+      <p>I acknowledge receipt of this summons. Receipt does not indicate agreement with the reported allegation or establish responsibility.</p>
+      <div class="row mt-4">
+        <div class="col-6"><div class="border-top pt-2 mt-4">Parent / guardian signature and printed name</div></div>
+        <div class="col-3"><div class="border-top pt-2 mt-4">Date received</div></div>
+        <div class="col-3"><div class="border-top pt-2 mt-4">Time</div></div>
+      </div>
+      <div class="row mt-4">
+        <div class="col-6"><div class="border-top pt-2 mt-4">Staff acknowledgment of service</div></div>
+        <div class="col-6"><div class="border-top pt-2 mt-4">Date and time served</div></div>
+      </div>
+    </section>
+  </article>
+</main>
+<style>
+  .summons-document { max-width: 800px; min-height: 10in; }
+  .summons-logo { width: 4.5rem; height: 4.5rem; object-fit: contain; }
+  .summons-factual-summary { white-space: normal; }
+  @page { size: A4; margin: 18mm; }
+  @media print {
+    body, .page, .page-wrapper, .page-body { background: #fff !important; color: #111 !important; }
+    .dh-sidebar, .dh-sidebar-backdrop, .page-footer, .d-print-none { display: none !important; }
+    .page { padding: 0 !important; }
+    .page-wrapper, .page-body { margin: 0 !important; padding: 0 !important; }
+    .summons-document { max-width: none; min-height: auto; padding: 0 !important; }
+    .summons-document p, .summons-document dd { font-size: 11pt; }
+  }
+</style>
+{% endblock %}

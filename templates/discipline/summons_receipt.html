@@ -1,0 +1,51 @@
+{% extends "theme/base.html" %}
+{% load static %}
+{% block title %}Service Receipt {{ summons.reference }} | Discipline Office{% endblock %}
+{% block extra_js %}
+{% if print_on_load %}
+<script>
+  window.addEventListener('load', function () { window.print(); });
+</script>
+{% endif %}
+{% endblock %}
+{% block content %}
+<main class="container-xl py-4">
+  <div class="d-print-none mb-3"><a class="btn btn-outline-secondary" href="{% url 'discipline:case_detail' case.pk %}">Back to case</a></div>
+  <article class="receipt-document mx-auto bg-white text-dark p-4 p-md-5">
+    <header class="text-center border-bottom pb-3 mb-4">
+      <img src="{% static 'images/discipline-office-logo.png' %}" alt="Kabankalan Catholic College logo" class="receipt-logo mb-2">
+      <div class="fw-bold">KABANKALAN CATHOLIC COLLEGE</div>
+      <div>Discipline Office</div>
+      <h1 class="h2 mt-3">SUMMONS SERVICE / RECEIPT</h1>
+    </header>
+    <dl class="row">
+      <dt class="col-5">Summons reference</dt><dd class="col-7 font-monospace">{{ summons.reference }}</dd>
+      <dt class="col-5">Case reference</dt><dd class="col-7 font-monospace">{{ case.reference }}</dd>
+      <dt class="col-5">Student</dt><dd class="col-7">{{ summons.respondent.name }}{% if summons.respondent.student_id %} · {{ summons.respondent.student_id }}{% endif %}</dd>
+      <dt class="col-5">Parent / guardian</dt><dd class="col-7">{{ summons.guardian_name }} · {{ summons.guardian_relationship }}</dd>
+      <dt class="col-5">Actual service date / time</dt><dd class="col-7">{{ summons.served_at|date:'F j, Y · g:i A' }}</dd>
+      <dt class="col-5">Receipt date</dt><dd class="col-7">{{ summons.received_at|date:'F j, Y'|default:'Not recorded' }}</dd>
+      <dt class="col-5">Acknowledgment recorded</dt><dd class="col-7">{% if summons.acknowledgment %}Yes{% else %}No{% endif %}</dd>
+      <dt class="col-5">Recorded by</dt><dd class="col-7">{% if summons.service_recorded_by %}{{ summons.service_recorded_by.get_full_name|default:summons.service_recorded_by.username }}{% else %}Not recorded{% endif %}</dd>
+      <dt class="col-5">Service notes</dt><dd class="col-7">{{ summons.service_notes|default:'—'|linebreaksbr }}</dd>
+    </dl>
+    <p class="mt-4">This receipt documents the service and acknowledgment information recorded above. It is not proof of misconduct or a final disciplinary finding.</p>
+    <div class="row mt-5">
+      <div class="col-6"><div class="border-top pt-2 mt-4">Parent / guardian acknowledgment</div></div>
+      <div class="col-6"><div class="border-top pt-2 mt-4">Authorized staff signature</div></div>
+    </div>
+  </article>
+</main>
+<style>
+  .receipt-document { max-width: 800px; min-height: 7in; }
+  .receipt-logo { width: 4.5rem; height: 4.5rem; object-fit: contain; }
+  @page { size: A4; margin: 18mm; }
+  @media print {
+    body, .page, .page-wrapper, .page-body { background: #fff !important; color: #111 !important; }
+    .dh-sidebar, .dh-sidebar-backdrop, .page-footer, .d-print-none { display: none !important; }
+    .page { padding: 0 !important; }
+    .page-wrapper, .page-body { margin: 0 !important; padding: 0 !important; }
+    .receipt-document { max-width: none; min-height: auto; padding: 0 !important; }
+  }
+</style>
+{% endblock %}

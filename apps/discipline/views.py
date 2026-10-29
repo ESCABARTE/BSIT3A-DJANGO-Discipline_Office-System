@@ -13,6 +13,10 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from .forms import (
     AnswerForm,
+    CaseClassificationForm,
+    CaseDecisionForm,
+    CaseReceiptForm,
+    CaseStatusForm,
     CommitteeForm,
     CommitteeMeetingForm,
     CommitteeMemberForm,
@@ -21,6 +25,7 @@ from .forms import (
     ProfileSearchForm,
     ReportForm,
     ServeSummonsForm,
+    SummonsApprovalForm,
     StageForm,
     SummonsForm,
     WorkflowActionForm,
@@ -43,6 +48,7 @@ from .models import (
     ProbationRecord,
     SchoolCalendarDay,
     StudentSuspension,
+    Summons,
 )
 from .permissions import (
     can_decide,
@@ -84,6 +90,8 @@ CASE_STATUS_GROUPS = {
         DisciplinaryCase.Status.APPEAL,
     ),
     'resolved': (
+        DisciplinaryCase.Status.DECISION_RECORDED,
+        DisciplinaryCase.Status.RESOLVED,
         DisciplinaryCase.Status.CLOSED,
         DisciplinaryCase.Status.REFERRED,
     ),
@@ -95,7 +103,18 @@ def _case_visible_or_404(request, pk):
 
 
 def _record_case_access(request, case, action):
-    CaseAuditLog.objects.create(case=case, actor=request.user, action=action)
+    return CaseAuditLog.objects.create(case=case, actor=request.user, action=action)
+
+
+def _user_position(user):
+    if user.is_superuser:
+        return 'System administrator'
+    membership = user.committee_memberships.filter(
+        active=True, committee__active=True,
+    ).order_by('assigned_at').first()
+    if not membership:
+        return ''
+    return membership.title or membership.get_role_display()
 
 
 def _report_case(request, report_type):
@@ -110,14 +129,20 @@ def _report_case(request, report_type):
     if request.method == 'POST' and form.is_valid():
         case = _create_report_case(request, form, report_type)
         if case is None:
-            return render(request, 'discipline/report_form.html', {
+            return render(request, 'discipline/intake.html', {
                 'form': form,
                 'report_type': report_type,
+                'can_file_incident': is_official(request.user),
                 **_navigation_context(request),
             })
         messages.success(request, f'Report submitted for review. Reference: {case.reference}')
         return redirect('discipline:case_detail', pk=case.pk)
-    return render(request, 'discipline/report_form.html', {'form': form, 'report_type': report_type, **_navigation_context(request)})
+    return render(request, 'discipline/intake.html', {
+        'form': form,
+        'report_type': report_type,
+        'can_file_incident': is_official(request.user),
+        **_navigation_context(request),
+    })
 
 
 def _create_report_case(request, form, report_type):
@@ -140,7 +165,35 @@ def _create_report_case(request, form, report_type):
             report.report_type = report_type
             report.submitted_by = request.user
             report.submitted_at = timezone.now()
+            if is_official(request.user):
+                report.received_at = report.submitted_at
+                report.received_by = request.user
+                report.receiving_position = _user_position(request.user)
             report.save()
+            if form.cleaned_data.get('classification'):
+                case.classification = form.cleaned_data['classification']
+                case.offense_category = form.cleaned_data.get('offense_category')
+                case.policy_version = case.offense_category.policy_version
+                case.classification_basis = form.cleaned_data.get('classification_basis', '')
+                case.classification_remarks = form.cleaned_data.get('classification_remarks', '')
+                case.classified_by = request.user
+                case.classified_at = timezone.now()
+                case.classification_reviewed = False
+                case.save(update_fields=(
+                    'classification', 'offense_category', 'classification_basis',
+                    'classification_remarks', 'policy_version', 'classified_by', 'classified_at',
+                    'classification_reviewed', 'updated_at',
+                ))
+                CaseAuditLog.objects.create(
+                    case=case,
+                    actor=request.user,
+                    action='classification_recorded',
+                    details=(
+                        f'Preliminary classification: {case.get_classification_display()}; '
+                        f'policy: {case.offense_category.name if case.offense_category else "not selected"}; '
+                        f'basis: {case.classification_basis}; remarks: {case.classification_remarks}'
+                    ),
+                )
             person_name = form.cleaned_data.get('respondent_name')
             if person_name:
                 student_id = form.cleaned_data.get('respondent_student_id', '').strip()
@@ -207,9 +260,11 @@ def incident_create(request):
 @require_GET
 def case_list(request):
     cases = visible_cases(request.user).order_by('-opened_at')
+    can_view_confidential = can_manage_confidential(request.user)
     query = request.GET.get('q', '').strip()
     status = request.GET.get('status', '').strip()
     source = request.GET.get('source', '').strip()
+    classification = request.GET.get('classification', '').strip()
     status_group = request.GET.get('status_group', '').strip()
     if query:
         cases = cases.filter(
@@ -225,17 +280,21 @@ def case_list(request):
         cases = cases.filter(status__in=CASE_STATUS_GROUPS[status_group])
     if source in CaseReport.ReportType.values:
         cases = cases.filter(source_type=source)
+    if can_view_confidential and classification in DisciplinaryCase.Classification.values:
+        cases = cases.filter(classification=classification)
     page = Paginator(cases.distinct(), 15).get_page(request.GET.get('page'))
     return render(request, 'discipline/case_list.html', {
         **_navigation_context(request),
-        'can_view_confidential': can_manage_confidential(request.user),
+        'can_view_confidential': can_view_confidential,
         'cases': page,
         'query': query,
         'status_filter': status,
         'status_group': status_group if status_group in CASE_STATUS_GROUPS else '',
         'source_filter': source,
+        'classification_filter': classification if can_view_confidential else '',
         'status_choices': DisciplinaryCase.Status.choices,
         'source_choices': CaseReport.ReportType.choices,
+        'classification_choices': DisciplinaryCase.Classification.choices,
     })
 
 
@@ -258,6 +317,12 @@ def case_detail(request, pk):
     else:
         visible_summonses = case.summonses.filter(respondent__account=request.user).select_related('respondent')
         visible_answers = case.answers.filter(respondent__account=request.user).select_related('respondent')
+    status_form = CaseStatusForm(case=case)
+    decision_eligible = case.status in (
+        DisciplinaryCase.Status.DECISION,
+        DisciplinaryCase.Status.APPEAL,
+        DisciplinaryCase.Status.DECISION_RECORDED,
+    )
 
     return render(request, 'discipline/case_detail.html', {
         **_navigation_context(request),
@@ -265,11 +330,22 @@ def case_detail(request, pk):
         'visible_actions': case.actions.exclude(
             action_type=CaseAction.ActionType.SANCTION,
         ).select_related('actor'),
+        'visible_decisions': case.actions.filter(
+            action_type=CaseAction.ActionType.DECISION,
+        ).select_related('actor'),
+        'summons_history': case.audit_logs.filter(action__startswith='summons_').select_related('actor'),
+        'status_history': case.actions.filter(action_type=CaseAction.ActionType.STATUS).select_related('actor'),
+        'classification_history': case.audit_logs.filter(action='classification_recorded').select_related('actor'),
         'case_documents': case.documents.all() if can_view_confidential else (),
         'visible_summonses': visible_summonses,
         'visible_answers': visible_answers,
         'can_view_confidential': can_view_confidential,
         'can_review': is_discipline_officer(request.user),
+        'can_finalize_decision': can_finalize_decision(request.user),
+        'decision_eligible': decision_eligible,
+        'status_transition_available': bool(status_form.fields['status'].choices),
+        'has_respondent': case.people.filter(role=CasePerson.Role.RESPONDENT).exists(),
+        'summons_approval_form': SummonsApprovalForm(user=request.user) if can_finalize_decision(request.user) else None,
         'can_decide': can_decide(request.user),
         'can_manage_policy': can_manage_policy(request.user),
         'can_view_audit': can_view_confidential,
@@ -315,11 +391,6 @@ def case_action(request, pk):
         action_type = form.cleaned_data['action_type']
         if action_type == CaseAction.ActionType.FINDING:
             require_decision_authority(request.user)
-        elif action_type == CaseAction.ActionType.DECISION or (
-            action_type == CaseAction.ActionType.STATUS
-            and form.cleaned_data['to_status'] == DisciplinaryCase.Status.CLOSED
-        ):
-            require_final_decision_authority(request.user)
         else:
             require_officer(request.user)
         with transaction.atomic():
@@ -329,24 +400,216 @@ def case_action(request, pk):
             action.actor = request.user
             action.from_status = previous_status
             action.save()
-            if action_type == CaseAction.ActionType.STATUS and action.to_status:
-                case.status = action.to_status
-                if action.to_status == DisciplinaryCase.Status.CLOSED:
-                    case.closed_at = timezone.now()
-            if action_type in (CaseAction.ActionType.FINDING, CaseAction.ActionType.DECISION):
-                if action.finding:
-                    case.finding = action.finding
-                if action.recommendation:
-                    case.recommendation = action.recommendation
-            if action_type == CaseAction.ActionType.DECISION:
-                case.decision_authority = action.authority
-                case.decision_date = timezone.localdate()
-                case.decision_notes = action.details
-            case.save()
+            update_fields = []
+            if action.finding:
+                case.finding = action.finding
+                update_fields.append('finding')
+            if action.recommendation:
+                case.recommendation = action.recommendation
+                update_fields.append('recommendation')
+            if update_fields:
+                update_fields.append('updated_at')
+                case.save(update_fields=update_fields)
             _record_case_access(request, case, f'action_{action_type}')
         messages.success(request, 'The case action was recorded.')
         return redirect('discipline:case_detail', pk=case.pk)
     return render(request, 'discipline/action_form.html', {'form': form, 'case': case, **_navigation_context(request)})
+
+
+@login_required(login_url='login')
+@require_http_methods(['GET', 'POST'])
+def case_classify(request, pk):
+    case = _case_visible_or_404(request, pk)
+    require_officer(request.user)
+    form = CaseClassificationForm(request.POST or None, instance=case)
+    if request.method == 'POST' and form.is_valid():
+        old_classification = case.get_classification_display() if case.classification else 'Unclassified'
+        old_policy = (
+            f'{case.offense_category.name} ({case.policy_version})'
+            if case.offense_category_id else 'Not selected'
+        )
+        with transaction.atomic():
+            case = form.save(commit=False)
+            case.policy_version = case.offense_category.policy_version
+            case.classified_by = request.user
+            case.classified_at = timezone.now()
+            case.classification_reviewed = False
+            case.save()
+            CaseAuditLog.objects.create(
+                case=case,
+                actor=request.user,
+                action='classification_recorded',
+                details=(
+                    f'{old_classification} ({old_policy}) → {case.get_classification_display()} '
+                    f'({case.offense_category.name}, {case.policy_version}); reason: {form.cleaned_data["change_reason"]}; '
+                    f'factual basis: {case.classification_basis}; remarks: {case.classification_remarks}'
+                ),
+            )
+        messages.success(request, 'Preliminary classification saved for authorized review.')
+        return redirect('discipline:case_detail', pk=case.pk)
+    return render(request, 'discipline/action_form.html', {
+        'form': form,
+        'case': case,
+        'form_title': 'Record preliminary classification',
+        **_navigation_context(request),
+    })
+
+
+@login_required(login_url='login')
+@require_http_methods(['GET', 'POST'])
+def case_receive(request, pk):
+    case = _case_visible_or_404(request, pk)
+    require_officer(request.user)
+    form = CaseReceiptForm(request.POST or None, initial={
+        'received_at': case.report.received_at,
+        'receiving_position': case.report.receiving_position or _user_position(request.user),
+        'intake_notes': case.report.intake_notes,
+    })
+    if request.method == 'POST' and form.is_valid():
+        report = case.report
+        previous = (
+            f'{report.received_at}; {report.received_by}; '
+            f'{report.receiving_position}; {report.intake_notes}'
+        )
+        with transaction.atomic():
+            report.received_at = form.cleaned_data['received_at']
+            report.received_by = request.user
+            report.receiving_position = form.cleaned_data['receiving_position']
+            report.intake_notes = form.cleaned_data['intake_notes']
+            report.save(update_fields=('received_at', 'received_by', 'receiving_position', 'intake_notes'))
+            CaseAuditLog.objects.create(
+                case=case,
+                actor=request.user,
+                action='complaint_received',
+                details=(
+                    f'Previous receipt details: {previous}. New receipt details: {report.received_at}; '
+                    f'{request.user.get_full_name() or request.user.username}; {report.receiving_position}; '
+                    f'{report.intake_notes}'
+                ),
+            )
+        messages.success(request, 'Complaint receipt details saved with an audit record.')
+        return redirect('discipline:case_detail', pk=case.pk)
+    return render(request, 'discipline/action_form.html', {
+        'form': form,
+        'case': case,
+        'form_title': 'Record complaint receipt',
+        **_navigation_context(request),
+    })
+
+
+@login_required(login_url='login')
+@require_http_methods(['GET', 'POST'])
+def case_status_update(request, pk):
+    case = _case_visible_or_404(request, pk)
+    require_officer(request.user)
+    form = CaseStatusForm(request.POST or None, case=case)
+    if request.method == 'POST' and form.is_valid():
+        target = form.cleaned_data['status']
+        if target in (DisciplinaryCase.Status.RESOLVED, DisciplinaryCase.Status.CLOSED):
+            require_final_decision_authority(request.user)
+        with transaction.atomic():
+            previous = case.status
+            case.status = target
+            if target == DisciplinaryCase.Status.CLOSED:
+                case.closed_at = timezone.now()
+            case.save(update_fields=('status', 'closed_at', 'updated_at'))
+            CaseAction.objects.create(
+                case=case,
+                action_type=CaseAction.ActionType.STATUS,
+                from_status=previous,
+                to_status=target,
+                details=form.cleaned_data['remarks'],
+                actor=request.user,
+            )
+            CaseAuditLog.objects.create(
+                case=case,
+                actor=request.user,
+                action='status_updated',
+                details=f'{DisciplinaryCase.Status(previous).label} → {DisciplinaryCase.Status(target).label}: {form.cleaned_data["remarks"]}',
+            )
+        messages.success(request, 'Case status updated and added to the history.')
+        return redirect('discipline:case_detail', pk=case.pk)
+    return render(request, 'discipline/action_form.html', {
+        'form': form,
+        'case': case,
+        'form_title': 'Update Case Status',
+        **_navigation_context(request),
+    })
+
+
+@login_required(login_url='login')
+@require_http_methods(['GET', 'POST'])
+def case_decision(request, pk):
+    case = _case_visible_or_404(request, pk)
+    require_final_decision_authority(request.user)
+    eligible_statuses = (DisciplinaryCase.Status.DECISION, DisciplinaryCase.Status.APPEAL, DisciplinaryCase.Status.DECISION_RECORDED)
+    if case.status not in eligible_statuses:
+        messages.error(request, 'A final decision is not available yet. Complete the case review and move the case to Awaiting final decision first.')
+        return redirect('discipline:case_detail', pk=case.pk)
+    form = CaseDecisionForm(request.POST or None, case=case, user=request.user, initial={
+        'finding': case.finding,
+        'authority_position': _user_position(request.user),
+    })
+    if request.method == 'POST' and form.is_valid():
+        outcome = form.cleaned_data['decision_outcome']
+        outcome_label = (
+            'No sanction / no further action'
+            if outcome == '__no_action__'
+            else outcome
+        )
+        latest = case.actions.filter(action_type=CaseAction.ActionType.DECISION).first()
+        with transaction.atomic():
+            action = CaseAction.objects.create(
+                case=case,
+                action_type=CaseAction.ActionType.DECISION,
+                from_status=case.status,
+                finding=form.cleaned_data['finding'],
+                decision_outcome=outcome_label,
+                authority=request.user.get_full_name() or request.user.username,
+                authority_position=form.cleaned_data['authority_position'],
+                details=form.cleaned_data['details'],
+                actor=request.user,
+            )
+            previous_status = case.status
+            case.finding = action.finding
+            case.decision_authority = action.authority
+            case.decision_date = timezone.localdate()
+            case.decision_notes = action.details
+            case.status = DisciplinaryCase.Status.DECISION_RECORDED
+            update_fields = [
+                'finding', 'decision_authority', 'decision_date', 'decision_notes',
+                'status', 'updated_at',
+            ]
+            if case.classification:
+                case.classification_reviewed = True
+                update_fields.append('classification_reviewed')
+            case.save(update_fields=update_fields)
+            CaseAction.objects.create(
+                case=case,
+                action_type=CaseAction.ActionType.STATUS,
+                from_status=previous_status,
+                to_status=case.status,
+                details='Status updated after an authorized final decision was recorded.',
+                actor=request.user,
+            )
+            CaseAuditLog.objects.create(
+                case=case,
+                actor=request.user,
+                action='decision_recorded' if latest is None else 'decision_updated',
+                details=(
+                    f'Outcome: {outcome_label}; finding: {action.get_finding_display()}; '
+                    f'authority: {action.authority} ({action.authority_position}); '
+                    f'details: {action.details}'
+                ),
+            )
+        messages.success(request, 'Authorized final decision recorded in the case history.')
+        return redirect('discipline:case_detail', pk=case.pk)
+    return render(request, 'discipline/action_form.html', {
+        'form': form,
+        'case': case,
+        'form_title': 'Record Decision' if not case.actions.filter(action_type=CaseAction.ActionType.DECISION).exists() else 'Update Decision',
+        **_navigation_context(request),
+    })
 
 
 @login_required(login_url='login')
@@ -371,14 +634,166 @@ def stage_create(request, pk):
 def summons_create(request, pk):
     case = _case_visible_or_404(request, pk)
     require_officer(request.user)
-    from .models import Summons
     form = SummonsForm(request.POST or None, case=case, issued_by=request.user)
     if request.method == 'POST' and form.is_valid():
-        summons = form.save()
-        _record_case_access(request, case, 'summons_issued')
-        messages.success(request, f'Summons recorded for {summons.respondent.name}. Record service and receipt to calculate the response deadline.')
+        with transaction.atomic():
+            summons = form.save()
+            CaseAuditLog.objects.create(
+                case=case,
+                actor=request.user,
+                action='summons_issued',
+                details=f'Summons {summons.reference} prepared for {summons.respondent.name}; approval and service remain separate.',
+            )
+        messages.success(request, f'Summons {summons.reference} prepared. It is not approved or served until those events are recorded.')
         return redirect('discipline:case_detail', pk=case.pk)
-    return render(request, 'discipline/action_form.html', {'form': form, 'case': case, 'form_title': 'Record summons'})
+    return render(request, 'discipline/action_form.html', {
+        'form': form,
+        'case': case,
+        'form_title': 'Prepare Parent/Guardian Summons',
+        **_navigation_context(request),
+    })
+
+
+@login_required(login_url='login')
+@require_http_methods(['GET', 'POST'])
+def summons_edit(request, pk, summons_id):
+    case = _case_visible_or_404(request, pk)
+    require_officer(request.user)
+    summons = get_object_or_404(Summons, case=case, pk=summons_id)
+    if summons.served_at:
+        messages.error(request, 'A served summons cannot be edited. Prepare a new summons to preserve the service record.')
+        return redirect('discipline:case_detail', pk=case.pk)
+    form = SummonsForm(request.POST or None, instance=summons, case=case, issued_by=request.user)
+    if request.method == 'POST' and form.is_valid():
+        old = (
+            f'{summons.guardian_name}; {summons.guardian_relationship}; {summons.hearing_at}; '
+            f'{summons.hearing_location}; {summons.instructions}; approved={summons.approved_at}'
+        )
+        with transaction.atomic():
+            summons = form.save(commit=False)
+            changed = any(
+                form.has_changed() and field in form.changed_data
+                for field in ('guardian_name', 'guardian_relationship', 'guardian_contact', 'hearing_at', 'hearing_location', 'instructions', 'respondent')
+            )
+            if changed and summons.approved_at:
+                summons.approved_by = None
+                summons.approved_by_position = ''
+                summons.approved_at = None
+            summons.save()
+            CaseAuditLog.objects.create(
+                case=case,
+                actor=request.user,
+                action='summons_updated',
+                details=f'Previous details: {old}. Updated summons {summons.reference}; changed fields: {", ".join(form.changed_data)}. Approval is required again if the document changed.',
+            )
+        messages.success(request, 'Summons updated. Any prior approval is cleared when approved content changes.')
+        return redirect('discipline:case_detail', pk=case.pk)
+    return render(request, 'discipline/action_form.html', {
+        'form': form,
+        'case': case,
+        'form_title': 'Update Parent/Guardian Summons',
+        **_navigation_context(request),
+    })
+
+
+@login_required(login_url='login')
+@require_POST
+def summons_approve(request, pk, summons_id):
+    case = _case_visible_or_404(request, pk)
+    require_final_decision_authority(request.user)
+    summons = get_object_or_404(Summons, case=case, pk=summons_id)
+    if summons.approved_at:
+        messages.error(request, 'This summons is already approved. Edit it to require renewed approval.')
+        return redirect('discipline:case_detail', pk=case.pk)
+    form = SummonsApprovalForm(request.POST, user=request.user)
+    if form.is_valid():
+        with transaction.atomic():
+            summons.approved_by = request.user
+            summons.approved_by_position = form.cleaned_data['approved_by_position']
+            summons.approved_at = timezone.now()
+            summons.save(update_fields=('approved_by', 'approved_by_position', 'approved_at'))
+            CaseAuditLog.objects.create(
+                case=case,
+                actor=request.user,
+                action='summons_approved',
+                details=f'Summons {summons.reference} expressly approved by {request.user.get_full_name() or request.user.username} ({summons.approved_by_position}).',
+            )
+        messages.success(request, 'Summons approval recorded.')
+    else:
+        messages.error(request, 'Select an authorized position to approve this summons.')
+    return redirect('discipline:case_detail', pk=case.pk)
+
+
+@login_required(login_url='login')
+@require_GET
+def summons_preview(request, pk, summons_id):
+    case = _case_visible_or_404(request, pk)
+    if not can_manage_confidential(request.user, case):
+        raise PermissionDenied('You are not authorized to preview this summons.')
+    summons = get_object_or_404(
+        Summons.objects.select_related('respondent', 'issued_by', 'approved_by'),
+        case=case,
+        pk=summons_id,
+    )
+    return render(request, 'discipline/summons_print.html', {
+        'case': case,
+        'summons': summons,
+        'preview': True,
+    })
+
+
+@login_required(login_url='login')
+@require_POST
+def summons_print(request, pk, summons_id):
+    case = _case_visible_or_404(request, pk)
+    if not can_manage_confidential(request.user, case):
+        raise PermissionDenied('You are not authorized to print this summons.')
+    summons = get_object_or_404(
+        Summons.objects.select_related('respondent', 'issued_by', 'approved_by'),
+        case=case,
+        pk=summons_id,
+    )
+    if not summons.approved_at:
+        messages.error(request, 'This summons must be approved by an authorized decision authority before it can be printed.')
+        return redirect('discipline:case_detail', pk=case.pk)
+    CaseAuditLog.objects.create(
+        case=case,
+        actor=request.user,
+        action='summons_printed',
+        details=f'Summons {summons.reference} print generated; approved={bool(summons.approved_at)}.',
+    )
+    return render(request, 'discipline/summons_print.html', {
+        'case': case,
+        'summons': summons,
+        'print_on_load': True,
+    })
+
+
+@login_required(login_url='login')
+@require_POST
+def summons_receipt_print(request, pk, summons_id):
+    case = _case_visible_or_404(request, pk)
+    if not can_manage_confidential(request.user, case):
+        raise PermissionDenied('You are not authorized to print this service receipt.')
+    summons = get_object_or_404(
+        Summons.objects.select_related('respondent', 'service_recorded_by'),
+        case=case,
+        pk=summons_id,
+    )
+    if not summons.served_at or not (summons.received_at or summons.acknowledgment):
+        messages.error(request, 'A receipt is available only after actual service or acknowledgment has been recorded.')
+        return redirect('discipline:case_detail', pk=case.pk)
+    CaseAuditLog.objects.create(
+        case=case,
+        actor=request.user,
+        action='summons_receipt_printed',
+        details=f'Service receipt generated for summons {summons.reference}.',
+    )
+    return render(request, 'discipline/summons_receipt.html', {
+        'case': case,
+        'summons': summons,
+        'print_on_load': True,
+    })
 
 
 @login_required(login_url='login')
@@ -386,16 +801,38 @@ def summons_create(request, pk):
 def summons_serve(request, pk, summons_id):
     case = _case_visible_or_404(request, pk)
     require_officer(request.user)
-    from .models import Summons
     summons = get_object_or_404(Summons, case=case, pk=summons_id)
+    if not summons.approved_at:
+        messages.error(request, 'This summons must be approved before actual service can be recorded.')
+        return redirect('discipline:case_detail', pk=case.pk)
     form = ServeSummonsForm(request.POST or None, instance=summons)
     if request.method == 'POST' and form.is_valid():
-        summons = form.save()
-        _record_case_access(request, case, 'summons_service_recorded')
+        previous = f'served_at={summons.served_at}; received_at={summons.received_at}; acknowledgment={summons.acknowledgment}; notes={summons.service_notes}'
+        with transaction.atomic():
+            summons = form.save(commit=False)
+            summons.service_recorded_by = request.user
+            summons.save()
+            CaseAuditLog.objects.create(
+                case=case,
+                actor=request.user,
+                action='summons_service_recorded',
+                details=(
+                    f'Summons {summons.reference}. Previous: {previous}. Current: served_at={summons.served_at}; '
+                    f'received_at={summons.received_at}; acknowledgment={summons.acknowledgment}; '
+                    f'recorded_by={request.user.get_full_name() or request.user.username}; notes={summons.service_notes}'
+                ),
+            )
         if summons.response_due:
             messages.success(request, f'Receipt recorded; the three-school-day response deadline is {summons.response_due}. This deadline flag does not determine responsibility.')
+        else:
+            messages.success(request, 'Service details recorded. Printing or preparing the summons does not mark it as served.')
         return redirect('discipline:case_detail', pk=case.pk)
-    return render(request, 'discipline/action_form.html', {'form': form, 'case': case, 'form_title': 'Record service and receipt'})
+    return render(request, 'discipline/action_form.html', {
+        'form': form,
+        'case': case,
+        'form_title': 'Record Service Details',
+        **_navigation_context(request),
+    })
 
 
 @login_required(login_url='login')
@@ -407,8 +844,18 @@ def summons_extension(request, pk, summons_id):
     summons = get_object_or_404(Summons, case=case, pk=summons_id)
     form = ExtensionForm(request.POST or None, instance=summons)
     if request.method == 'POST' and form.is_valid():
-        form.save()
-        _record_case_access(request, case, 'response_extension_recorded')
+        previous_due = summons.extension_due
+        with transaction.atomic():
+            summons = form.save()
+            CaseAuditLog.objects.create(
+                case=case,
+                actor=request.user,
+                action='response_extension_recorded',
+                details=(
+                    f'Summons {summons.reference}; prior extension: {previous_due}; '
+                    f'new extension: {summons.extension_due}; notes: {summons.service_notes}'
+                ),
+            )
         messages.success(request, 'The approved response extension was recorded.')
         return redirect('discipline:case_detail', pk=case.pk)
     return render(request, 'discipline/action_form.html', {'form': form, 'case': case, 'form_title': 'Record approved extension'})

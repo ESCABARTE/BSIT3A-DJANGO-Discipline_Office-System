@@ -8,7 +8,7 @@ from django.test import TestCase
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 
-from .forms import WorkflowActionForm
+from .forms import CaseDecisionForm, CaseStatusForm, WorkflowActionForm
 from .models import (
     CaseAction,
     CaseAuditLog,
@@ -71,6 +71,7 @@ class DisciplineAccessAndWorkflowTests(TestCase):
         self.assertEqual(official_response.status_code, 200)
         self.assertEqual(official_response.context['report_type'], CaseReport.ReportType.INCIDENT)
         self.assertContains(official_response, 'name="report_type"')
+        self.assertContains(official_response, 'id="id_complainant_relationship"')
         self.assertNotContains(official_response, 'intake-type-card')
 
         self.client.force_login(self.student)
@@ -118,11 +119,20 @@ class DisciplineAccessAndWorkflowTests(TestCase):
         self.client.force_login(self.staff)
         official_home = self.client.get(reverse('dashboard'))
         self.assertContains(official_home, 'Discipline</span>')
-        self.assertContains(official_home, 'Policy Management')
+        self.assertContains(official_home, 'Campus Rules &amp; Policy')
+        self.assertNotContains(official_home, 'Policy Management')
+        self.assertContains(official_home, 'data-sidebar-submenu')
+        self.assertContains(official_home, 'aria-pressed="false"')
+        self.assertContains(official_home, 'Policy Records')
+        self.assertContains(official_home, 'Policy Log')
         self.assertContains(official_home, reverse('discipline:incident_log'))
         self.assertNotContains(official_home, 'Disciplinary Management Dashboard')
         self.assertNotContains(official_home, 'Violations')
         self.assertNotContains(official_home, 'Sanctions/Penalties')
+
+        self.client.force_login(self.admin)
+        admin_home = self.client.get(reverse('dashboard'))
+        self.assertContains(admin_home, 'Add Policy')
 
         self.client.force_login(self.student)
         student_home = self.client.get(reverse('dashboard'))
@@ -136,6 +146,8 @@ class DisciplineAccessAndWorkflowTests(TestCase):
         response = self.client.post(reverse('discipline:complaint_create'), {
             'complainant_name': 'Student Complainant',
             'complainant_student_id': 'S-100',
+            'complainant_relationship': 'Student',
+            'reporting_method': 'written',
             'complainant_program': 'College',
             'complainant_year_section': '1A',
             'respondent_name': 'Respondent Student',
@@ -151,6 +163,8 @@ class DisciplineAccessAndWorkflowTests(TestCase):
         report = case.report
         self.assertTrue(case.reference.startswith('DO-'))
         self.assertEqual(report.submitted_by, self.student)
+        self.assertEqual(report.complainant_relationship, 'Student')
+        self.assertEqual(report.reporting_method, 'written')
         self.assertEqual(case.finding, DisciplinaryCase.Finding.NOT_DETERMINED)
         self.assertEqual(case.final_sanction, DisciplinaryCase.Sanction.NONE)
         self.assertTrue(CaseAuditLog.objects.filter(case=case, actor=self.student, action='created_report').exists())
@@ -215,12 +229,13 @@ class DisciplineAccessAndWorkflowTests(TestCase):
         self.assertFalse(self.staff.committee_memberships.filter(role='president').exists())
 
     def test_staff_cannot_close_a_case_without_decision_role(self):
-        case, _ = self.make_report()
+        case, _ = self.make_report(submitter=self.student)
+        case.status = DisciplinaryCase.Status.RESOLVED
+        case.save(update_fields=['status'])
         self.client.force_login(self.staff)
-        response = self.client.post(reverse('discipline:case_action', args=[case.pk]), {
-            'action_type': CaseAction.ActionType.STATUS,
-            'to_status': DisciplinaryCase.Status.CLOSED,
-            'details': 'Attempt to close without decision role.',
+        response = self.client.post(reverse('discipline:case_status_update', args=[case.pk]), {
+            'status': DisciplinaryCase.Status.CLOSED,
+            'remarks': 'Attempt to close without decision role.',
         })
         self.assertEqual(response.status_code, 403)
         case.refresh_from_db()
@@ -247,13 +262,29 @@ class DisciplineAccessAndWorkflowTests(TestCase):
             'name': 'Test policy with no penalty guidance',
             'description': 'A policy whose approved penalty guidance is not specified.',
             'classification': 'unclassified',
-            'permitted_sanctions': '',
+            'decision_options': '',
             'policy_version': 'Pending school approval',
         })
 
         self.assertRedirects(response, reverse('discipline:policy_list'))
         category = OffenseCategory.objects.get(name='Test policy with no penalty guidance')
         self.assertEqual(category.permitted_sanctions, [])
+
+    def test_policy_decision_options_are_configured_in_policy_management(self):
+        self.client.force_login(self.admin)
+        form_response = self.client.get(reverse('discipline:policy_create'))
+        self.assertContains(form_response, 'Available decision / penalty options')
+        response = self.client.post(reverse('discipline:policy_create'), {
+            'name': 'Configured outcomes policy',
+            'description': 'Options are entered only when approved by the school.',
+            'classification': 'unclassified',
+            'decision_options': 'Approved option one\nApproved option two',
+            'policy_version': '2026-A',
+            'active': 'on',
+        })
+        self.assertRedirects(response, reverse('discipline:policy_list'))
+        category = OffenseCategory.objects.get(name='Configured outcomes policy')
+        self.assertEqual(category.permitted_sanctions, ['Approved option one', 'Approved option two'])
 
     def test_policy_model_normalizes_null_permitted_sanctions(self):
         category = OffenseCategory.objects.create(
@@ -271,7 +302,103 @@ class DisciplineAccessAndWorkflowTests(TestCase):
 
         action_form = WorkflowActionForm()
         self.assertNotIn('sanction', [value for value, _ in action_form.fields['action_type'].choices])
+        self.assertNotIn('status', [value for value, _ in action_form.fields['action_type'].choices])
+        self.assertNotIn('to_status', action_form.fields)
         self.assertNotIn('final_sanction', action_form.fields)
+
+    def test_case_status_transitions_are_validated_and_authorized(self):
+        case, _ = self.make_report(submitter=self.student)
+        self.client.force_login(self.staff)
+        invalid_response = self.client.post(reverse('discipline:case_status_update', args=[case.pk]), {
+            'status': DisciplinaryCase.Status.CLOSED,
+            'remarks': 'Attempted to close without review.',
+        })
+        self.assertEqual(invalid_response.status_code, 200)
+        case.refresh_from_db()
+        self.assertEqual(case.status, DisciplinaryCase.Status.SUBMITTED)
+
+        valid_response = self.client.post(reverse('discipline:case_status_update', args=[case.pk]), {
+            'status': DisciplinaryCase.Status.INITIAL_REVIEW,
+            'remarks': 'Initial review started.',
+        })
+        self.assertEqual(valid_response.status_code, 302)
+        case.refresh_from_db()
+        self.assertEqual(case.status, DisciplinaryCase.Status.INITIAL_REVIEW)
+        self.assertTrue(CaseAction.objects.filter(
+            case=case,
+            action_type=CaseAction.ActionType.STATUS,
+            to_status=DisciplinaryCase.Status.INITIAL_REVIEW,
+        ).exists())
+
+        self.client.force_login(self.student)
+        denied_response = self.client.post(reverse('discipline:case_status_update', args=[case.pk]), {
+            'status': DisciplinaryCase.Status.INVESTIGATION,
+            'remarks': 'Unauthorized status change.',
+        })
+        self.assertEqual(denied_response.status_code, 403)
+
+    def test_final_decision_requires_authority_and_uses_policy_outcomes(self):
+        case, _ = self.make_report()
+        policy = OffenseCategory.objects.create(
+            name='Decision policy',
+            description='Approved options for test decisions.',
+            permitted_sanctions=['Approved policy outcome'],
+        )
+        case.offense_category = policy
+        case.classification = DisciplinaryCase.Classification.MAJOR
+        case.status = DisciplinaryCase.Status.DECISION
+        case.save()
+
+        decision_form = CaseDecisionForm(case=case, user=self.admin)
+        self.assertIn(('Approved policy outcome', 'Approved policy outcome'), decision_form.fields['decision_outcome'].choices)
+        self.assertNotIn(('unlisted', 'unlisted'), decision_form.fields['decision_outcome'].choices)
+
+        self.client.force_login(self.staff)
+        response = self.client.post(reverse('discipline:case_decision', args=[case.pk]), {
+            'finding': DisciplinaryCase.Finding.SUBSTANTIATED,
+            'decision_outcome': 'Approved policy outcome',
+            'authority_position': 'Discipline Officer',
+            'details': 'An unauthorized decision attempt.',
+        })
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(case.actions.filter(action_type=CaseAction.ActionType.DECISION).exists())
+
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse('discipline:case_decision', args=[case.pk]), {
+            'finding': DisciplinaryCase.Finding.SUBSTANTIATED,
+            'decision_outcome': 'Approved policy outcome',
+            'authority_position': 'System administrator',
+            'details': 'Decision based on reviewed evidence.',
+        })
+        self.assertEqual(response.status_code, 302)
+        case.refresh_from_db()
+        self.assertEqual(case.status, DisciplinaryCase.Status.DECISION_RECORDED)
+        self.assertTrue(case.classification_reviewed)
+        self.assertTrue(case.actions.filter(
+            action_type=CaseAction.ActionType.DECISION,
+            decision_outcome='Approved policy outcome',
+        ).exists())
+
+    def test_preliminary_classification_is_audited_without_finding_responsibility(self):
+        case, _ = self.make_report()
+        policy = OffenseCategory.objects.create(
+            name='Classification policy',
+            description='A policy for preliminary classification tests.',
+        )
+        self.client.force_login(self.staff)
+        response = self.client.post(reverse('discipline:case_classify', args=[case.pk]), {
+            'classification': DisciplinaryCase.Classification.SERIOUS,
+            'offense_category': policy.pk,
+            'classification_basis': 'Reported facts require review.',
+            'classification_remarks': 'Preliminary only.',
+            'change_reason': 'Initial review.',
+        })
+        self.assertEqual(response.status_code, 302)
+        case.refresh_from_db()
+        self.assertEqual(case.finding, DisciplinaryCase.Finding.NOT_DETERMINED)
+        self.assertFalse(case.classification_reviewed)
+        self.assertEqual(case.policy_version, policy.policy_version)
+        self.assertTrue(CaseAuditLog.objects.filter(case=case, action='classification_recorded').exists())
 
     def test_discipline_officer_role_cannot_submit_removed_sanction_action(self):
         self.assertTrue(can_decide(self.staff))
@@ -304,9 +431,40 @@ class DisciplineAccessAndWorkflowTests(TestCase):
         from .models import CasePerson
         respondent = CasePerson.objects.create(case=case, role='respondent', name='Respondent')
         self.client.force_login(self.staff)
-        response = self.client.post(reverse('discipline:summons_create', args=[case.pk]), {'respondent': respondent.pk, 'service_notes': ''})
+        hearing_at = (timezone.now() + timedelta(days=1)).strftime('%Y-%m-%dT%H:%M')
+        response = self.client.post(reverse('discipline:summons_create', args=[case.pk]), {
+            'respondent': respondent.pk,
+            'guardian_name': 'Parent Name',
+            'guardian_relationship': 'Parent',
+            'guardian_contact': '555-0100',
+            'hearing_at': hearing_at,
+            'hearing_location': 'Discipline Office',
+            'instructions': 'Attend the scheduled hearing.',
+            'service_notes': '',
+        })
         self.assertEqual(response.status_code, 302)
         summons = Summons.objects.get(case=case)
+        self.assertTrue(summons.reference)
+        response = self.client.post(reverse('discipline:summons_print', args=[case.pk, summons.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(CaseAuditLog.objects.filter(case=case, action='summons_printed').exists())
+        response = self.client.post(reverse('discipline:summons_serve', args=[case.pk, summons.pk]), {
+            'received_at': '2000-01-01', 'service_notes': '', 'acknowledgment': '',
+        })
+        self.assertEqual(response.status_code, 302)
+        summons.refresh_from_db()
+        self.assertIsNone(summons.served_at)
+
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse('discipline:summons_approve', args=[case.pk, summons.pk]), {
+            'approved_by_position': 'System administrator',
+        })
+        self.assertEqual(response.status_code, 302)
+        response = self.client.post(reverse('discipline:summons_print', args=[case.pk, summons.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Approved by:')
+        self.assertTrue(CaseAuditLog.objects.filter(case=case, action='summons_printed').exists())
+        self.client.force_login(self.staff)
         response = self.client.post(reverse('discipline:summons_serve', args=[case.pk, summons.pk]), {
             'received_at': '2000-01-01', 'service_notes': '', 'acknowledgment': '',
         })
@@ -314,7 +472,10 @@ class DisciplineAccessAndWorkflowTests(TestCase):
         summons.refresh_from_db()
         self.assertIsNone(summons.received_at)
         response = self.client.post(reverse('discipline:summons_serve', args=[case.pk, summons.pk]), {
-            'received_at': '2099-01-01', 'served_at': '2026-10-28T09:00', 'service_notes': '', 'acknowledgment': 'on',
+            'received_at': '2099-01-01',
+            'served_at': (timezone.now() + timedelta(days=2)).strftime('%Y-%m-%dT%H:%M'),
+            'service_notes': '',
+            'acknowledgment': 'on',
         })
         self.assertEqual(response.status_code, 200)
         summons.refresh_from_db()
@@ -465,6 +626,8 @@ class DisciplineRemovalRegressionTests(TestCase):
             'submission_token': token,
             'complainant_name': 'Student Reporter',
             'complainant_student_id': 'S-100',
+            'complainant_relationship': 'Student',
+            'reporting_method': 'written',
             'respondent_name': 'Test Student',
             'respondent_student_id': 'S-200',
             'narration': 'Incident submitted for review.',

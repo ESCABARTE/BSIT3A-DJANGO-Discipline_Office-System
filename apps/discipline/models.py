@@ -140,9 +140,18 @@ class DisciplinaryCase(models.Model):
         HEARING = 'hearing', 'Hearing / evidence review'
         COMMITTEE = 'committee', 'Awaiting committee action'
         DECISION = 'decision', 'Awaiting final decision'
+        DECISION_RECORDED = 'decision_recorded', 'Decision recorded'
+        AWAITING_GUARDIAN = 'guardian_hearing', 'Awaiting parent / guardian hearing'
         APPEAL = 'appeal', 'Appeal / reconsideration'
+        RESOLVED = 'resolved', 'Resolved'
         CLOSED = 'closed', 'Closed'
         REFERRED = 'referred', 'Referred'
+
+    class Classification(models.TextChoices):
+        MINOR = 'minor', 'Minor'
+        MAJOR = 'major', 'Major'
+        SERIOUS = 'serious', 'Serious'
+        EXPULSION_REVIEW = 'expulsion_review', 'Expulsion-level review'
 
     class Finding(models.TextChoices):
         NOT_DETERMINED = 'not_determined', 'Not determined'
@@ -168,6 +177,14 @@ class DisciplinaryCase(models.Model):
     opened_at = models.DateTimeField(default=timezone.now, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
     assigned_officer = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='discipline_cases_assigned')
+    classification = models.CharField(max_length=24, choices=Classification.choices, blank=True)
+    classification_remarks = models.TextField(blank=True)
+    classification_basis = models.TextField(blank=True)
+    classified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='discipline_cases_classified',
+    )
+    classified_at = models.DateTimeField(null=True, blank=True)
     classification_reviewed = models.BooleanField(default=False)
     offense_category = models.ForeignKey(OffenseCategory, null=True, blank=True, on_delete=models.PROTECT, related_name='cases')
     violation = models.ForeignKey(Violation, null=True, blank=True, on_delete=models.PROTECT, related_name='cases')
@@ -316,6 +333,9 @@ class CaseReport(models.Model):
     complainant_student_id = models.CharField(max_length=80, blank=True)
     complainant_program = models.CharField(max_length=160, blank=True)
     complainant_year_section = models.CharField(max_length=120, blank=True)
+    complainant_relationship = models.CharField(max_length=120, blank=True)
+    complainant_contact = models.CharField(max_length=180, blank=True)
+    reporting_method = models.CharField(max_length=80, blank=True)
     respondent_name = models.CharField(max_length=180, blank=True)
     respondent_student_id = models.CharField(max_length=80, blank=True)
     respondent_program = models.CharField(max_length=160, blank=True)
@@ -328,6 +348,12 @@ class CaseReport(models.Model):
     acknowledgment = models.BooleanField(default=False)
     submitted_at = models.DateTimeField(default=timezone.now)
     received_at = models.DateTimeField(null=True, blank=True)
+    received_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='discipline_reports_received',
+    )
+    receiving_position = models.CharField(max_length=160, blank=True)
+    intake_notes = models.TextField(blank=True)
     reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='discipline_reports_reviewed')
     review_notes = models.TextField(blank=True)
 
@@ -373,20 +399,45 @@ class CaseDocument(models.Model):
 
 
 class Summons(models.Model):
+    class ApprovalStatus(models.TextChoices):
+        PENDING = 'pending', 'Pending approval'
+        APPROVED = 'approved', 'Approved'
+
+    reference = models.CharField(max_length=32, unique=True)
     case = models.ForeignKey(DisciplinaryCase, on_delete=models.CASCADE, related_name='summonses')
     respondent = models.ForeignKey(CasePerson, on_delete=models.PROTECT, related_name='summonses')
     issued_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='summonses_issued')
     issued_at = models.DateTimeField(default=timezone.now)
+    guardian_name = models.CharField(max_length=180, blank=True)
+    guardian_relationship = models.CharField(max_length=120, blank=True)
+    guardian_contact = models.CharField(max_length=180, blank=True)
+    hearing_at = models.DateTimeField(null=True, blank=True)
+    hearing_location = models.CharField(max_length=180, blank=True)
+    instructions = models.TextField(blank=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
+        related_name='summonses_approved',
+    )
+    approved_by_position = models.CharField(max_length=180, blank=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
     served_at = models.DateTimeField(null=True, blank=True)
     received_at = models.DateField(null=True, blank=True)
+    service_recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
+        related_name='summons_service_records',
+    )
     response_due = models.DateField(null=True, blank=True)
     extension_due = models.DateField(null=True, blank=True)
     service_notes = models.TextField(blank=True)
     acknowledgment = models.BooleanField(default=False)
 
     def save(self, *args, **kwargs):
+        if not self.reference:
+            self.reference = f'SUM-{timezone.now():%Y%m%d}-{uuid.uuid4().hex[:8].upper()}'
         if self.received_at:
             self.response_due = add_school_days(self.received_at, 3)
+        else:
+            self.response_due = None
         super().save(*args, **kwargs)
 
     @property
@@ -454,7 +505,9 @@ class CaseAction(models.Model):
     finding = models.CharField(max_length=20, choices=DisciplinaryCase.Finding.choices, blank=True)
     recommendation = models.TextField(blank=True)
     final_sanction = models.CharField(max_length=20, choices=DisciplinaryCase.Sanction.choices, blank=True)
+    decision_outcome = models.CharField(max_length=180, blank=True)
     authority = models.CharField(max_length=180, blank=True)
+    authority_position = models.CharField(max_length=180, blank=True)
     details = models.TextField(blank=True)
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='discipline_actions')
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
