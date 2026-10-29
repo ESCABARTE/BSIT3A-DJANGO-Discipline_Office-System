@@ -45,8 +45,7 @@
   <div class="alert alert-warning d-flex gap-2 align-items-start mb-4" role="note">
     <i class="fas fa-triangle-exclamation mt-1 flex-shrink-0" aria-hidden="true"></i>
     <div>
-      This policy entry classifies offense allegations for authorized review only.
-      It does not establish responsibility or automatically assign a sanction to any student.
+      This policy entry supports authorized review only. It does not establish responsibility or decide a student's disciplinary outcome.
     </div>
   </div>
 
@@ -64,7 +63,7 @@
           <div class="policy-detail-value">{{ category.policy_reference|default:"—" }}</div>
         </div>
         <div class="col-12 col-md-4">
-          <div class="policy-detail-label">Offense Category</div>
+          <div class="policy-detail-label">Policy Classification</div>
           <div class="policy-detail-value">{{ category.get_classification_display }}</div>
         </div>
         <div class="col-12 col-md-4">
@@ -106,26 +105,6 @@
     </div>
     <div class="card-body">
       <div class="policy-text-block">{{ category.escalation_rules|linebreaksbr }}</div>
-    </div>
-  </div>
-  {% endif %}
-
-  {# ── Approved penalty guidance ───────────────────────────── #}
-  {% if category.permitted_sanctions %}
-  <div class="card mb-4">
-    <div class="card-header">
-      <h2 class="card-title">
-        <i class="fas fa-scale-balanced me-2 text-primary" aria-hidden="true"></i>
-        Approved Penalty Guidance
-      </h2>
-    </div>
-    <div class="card-body">
-      <div class="alert alert-info d-flex gap-2 mb-3" role="note">
-        <i class="fas fa-info-circle flex-shrink-0 mt-1" aria-hidden="true"></i>
-        <span>Penalty guidance is for authorized reference only. All sanctions must follow the school's
-        approved disciplinary procedure and require a designated decision authority.</span>
-      </div>
-      <code class="d-block p-3 bg-surface-secondary rounded">{{ category.permitted_sanctions }}</code>
     </div>
   </div>
   {% endif %}

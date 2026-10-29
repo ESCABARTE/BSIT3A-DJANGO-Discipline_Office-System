@@ -29,11 +29,8 @@
               <th>Case</th>
               <th>Incident</th>
               <th>Report</th>
-              <th>Violations</th>
-              <th>Sanctions / penalties</th>
               <th>Status</th>
               <th>Finding</th>
-              <th>Final sanction</th>
             </tr>
           </thead>
           <tbody>
@@ -42,26 +39,11 @@
                 <td><a href="{% url 'discipline:case_detail' case.pk %}">{{ case.reference }}</a></td>
                 <td>{{ case.report.incident_at|date:'M j, Y'|default:'—' }}</td>
                 <td>{{ case.get_source_type_display }}</td>
-                <td>
-                  {% for violation in case.history_violations %}
-                    <div>{{ violation.code }} · {{ violation.name }}</div>
-                  {% empty %}
-                    —
-                  {% endfor %}
-                </td>
-                <td>
-                  {% for sanction in case.history_sanctions %}
-                    <div>{{ sanction.name }} · {{ sanction.get_review_status_display }} · {{ sanction.effective_status_display }} · Assigned {{ sanction.assigned_date }}{% if sanction.due_date %} · Due {{ sanction.due_date }}{% endif %}</div>
-                  {% empty %}
-                    —
-                  {% endfor %}
-                </td>
                 <td>{{ case.get_status_display }}</td>
                 <td>{{ case.get_finding_display }}</td>
-                <td>{{ case.get_final_sanction_display }}</td>
               </tr>
             {% empty %}
-              <tr><td colspan="8" class="text-secondary">No matching records are visible to your role.</td></tr>
+              <tr><td colspan="5" class="text-secondary">No matching records are visible to your role.</td></tr>
             {% endfor %}
           </tbody>
         </table>

@@ -2,9 +2,7 @@ import os
 import uuid
 
 from django import forms
-from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.db.models import Q
 from django.utils import timezone
 
 from .models import (
@@ -15,15 +13,11 @@ from .models import (
     CommitteeMeeting,
     DisciplinaryCase,
     DisciplinaryCommittee,
-    DisciplinarySanction,
     CommitteeMember,
     OffenseCategory,
-    PenaltyCatalog,
     RespondentAnswer,
     Summons,
-    Violation,
 )
-from .permissions import is_discipline_officer
 
 
 class ReportForm(forms.ModelForm):
@@ -33,12 +27,6 @@ class ReportForm(forms.ModelForm):
     respondent_program = forms.CharField(max_length=160, required=False, label='Course / program')
     respondent_year_section = forms.CharField(max_length=120, required=False, label='Year level and section')
     witness_information = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2}))
-    violations = forms.ModelMultipleChoiceField(
-        queryset=Violation.objects.none(),
-        required=False,
-        widget=forms.SelectMultiple(attrs={'class': 'form-select'}),
-        help_text='These are initial allegations for review, not findings of responsibility.',
-    )
     evidence = forms.FileField(required=False)
 
     class Meta:
@@ -76,18 +64,6 @@ class ReportForm(forms.ModelForm):
             self.fields['reporting_position'].required = True
             for name in ('complainant_name', 'complainant_student_id', 'complainant_program', 'complainant_year_section'):
                 self.fields[name].widget = forms.HiddenInput()
-        if not user or not is_discipline_officer(user):
-            self.fields.pop('violations')
-        else:
-            self.fields['violations'].queryset = Violation.objects.filter(active=True).select_related('category')
-            self.fields['violations'].label_from_instance = lambda item: (
-                f'{item.code} — {item.name} · {item.category.name} · '
-                f'{item.get_classification_display() or "Unclassified"} · {item.get_severity_display()}'
-                + (f' · Rule: {item.applicable_rule}' if item.applicable_rule else '')
-                + (f' · Policy: {item.policy_reference}' if item.policy_reference else '')
-                + (f' · Recommended: {item.recommended_penalty}' if item.recommended_penalty else '')
-            )
-            self.fields['violations'].widget.attrs.update({'class': 'form-select', 'size': 5})
         self.fields['evidence'].help_text = 'Optional; PDF, JPG, or PNG, up to 10 MB. Accessible only to authorized case personnel.'
         self.fields['evidence'].widget.attrs.update({'class': 'form-control', 'accept': '.pdf,.jpg,.jpeg,.png'})
 
@@ -122,11 +98,19 @@ class ReportForm(forms.ModelForm):
 class WorkflowActionForm(forms.ModelForm):
     class Meta:
         model = CaseAction
-        fields = ('action_type', 'to_status', 'finding', 'recommendation', 'final_sanction', 'authority', 'details')
+        fields = ('action_type', 'to_status', 'finding', 'recommendation', 'authority', 'details')
         widgets = {
             'recommendation': forms.Textarea(attrs={'rows': 3}),
             'details': forms.Textarea(attrs={'rows': 3}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['action_type'].choices = [
+            (value, label)
+            for value, label in self.fields['action_type'].choices
+            if value != CaseAction.ActionType.SANCTION
+        ]
 
     def clean(self):
         cleaned = super().clean()
@@ -135,8 +119,6 @@ class WorkflowActionForm(forms.ModelForm):
             cleaned['finding'] = ''
         if action_type != CaseAction.ActionType.STATUS:
             cleaned['to_status'] = ''
-        if action_type not in (CaseAction.ActionType.DECISION, CaseAction.ActionType.SANCTION):
-            cleaned['final_sanction'] = ''
         if action_type != CaseAction.ActionType.RECOMMENDATION:
             cleaned['recommendation'] = ''
         if action_type == CaseAction.ActionType.FINDING and not cleaned.get('finding'):
@@ -148,13 +130,6 @@ class WorkflowActionForm(forms.ModelForm):
                 self.add_error('authority', 'Record the decision-making authority.')
             if not cleaned.get('details'):
                 self.add_error('details', 'Record the decision and its basis.')
-        if action_type == CaseAction.ActionType.SANCTION:
-            if not cleaned.get('final_sanction') or cleaned.get('final_sanction') == 'none':
-                self.add_error('final_sanction', 'Select the specifically approved sanction.')
-            if not cleaned.get('authority'):
-                self.add_error('authority', 'Record the authorizing official.')
-            if not cleaned.get('details'):
-                self.add_error('details', 'Record the authorization and policy basis.')
         return cleaned
 
 
@@ -163,13 +138,13 @@ class OffenseCategoryForm(forms.ModelForm):
         model = OffenseCategory
         fields = (
             'name', 'description', 'policy_reference', 'classification',
-            'permitted_sanctions', 'escalation_rules', 'review_authority',
+            'escalation_rules', 'review_authority',
             'restitution_required', 'policy_version', 'active', 'notes',
         )
         widgets = {
             'name': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'e.g. Violation of Dress Code',
+                'placeholder': 'e.g. Student Handbook Policy',
             }),
             'policy_reference': forms.TextInput(attrs={
                 'class': 'form-control',
@@ -181,11 +156,6 @@ class OffenseCategoryForm(forms.ModelForm):
                 'placeholder': 'A short summary of this policy entry.',
             }),
             'classification': forms.Select(attrs={'class': 'form-select'}),
-            'permitted_sanctions': forms.Textarea(attrs={
-                'class': 'form-control font-monospace',
-                'rows': 2,
-                'placeholder': '["jug", "post_1"]',
-            }),
             'escalation_rules': forms.Textarea(attrs={
                 'class': 'form-control',
                 'rows': 3,
@@ -213,169 +183,6 @@ class OffenseCategoryForm(forms.ModelForm):
         self.fields['name'].required = True
         self.fields['classification'].required = True
         self.fields['description'].required = True
-
-    def clean_permitted_sanctions(self):
-        return self.cleaned_data.get('permitted_sanctions') or []
-
-
-class ViolationForm(forms.ModelForm):
-    class Meta:
-        model = Violation
-        fields = (
-            'code', 'name', 'description', 'category', 'severity',
-            'classification', 'applicable_rule', 'recommended_penalty',
-            'policy_reference',
-        )
-        widgets = {
-            'description': forms.Textarea(attrs={'rows': 3}),
-            'recommended_penalty': forms.Textarea(attrs={'rows': 2}),
-        }
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        categories = OffenseCategory.objects.filter(active=True)
-        if self.instance.pk and self.instance.category_id:
-            categories = OffenseCategory.objects.filter(
-                Q(active=True) | Q(pk=self.instance.category_id),
-            )
-        self.fields['category'].queryset = categories
-        self.fields['classification'].required = True
-        for field in self.fields.values():
-            field.widget.attrs.setdefault(
-                'class',
-                'form-select' if isinstance(field.widget, forms.Select) else 'form-control',
-            )
-
-
-class CaseViolationForm(forms.Form):
-    violations = forms.ModelMultipleChoiceField(
-        queryset=Violation.objects.none(),
-        required=True,
-        widget=forms.SelectMultiple(attrs={'class': 'form-select', 'size': 6}),
-    )
-
-    def __init__(self, *args, instance, **kwargs):
-        self.instance = instance
-        super().__init__(*args, **kwargs)
-        violations = Violation.objects.filter(active=True)
-        linked_ids = list(instance.violations.values_list('pk', flat=True))
-        if instance.violation_id:
-            linked_ids.append(instance.violation_id)
-        if linked_ids:
-            violations = Violation.objects.filter(Q(active=True) | Q(pk__in=linked_ids))
-        self.fields['violations'].queryset = violations.select_related('category')
-        self.fields['violations'].label_from_instance = lambda item: (
-            f'{item.code} — {item.name} · {item.category.name} · '
-            f'{item.get_classification_display() or "Unclassified"} · {item.get_severity_display()}'
-            + (f' · Rule: {item.applicable_rule}' if item.applicable_rule else '')
-            + (f' · Policy: {item.policy_reference}' if item.policy_reference else '')
-            + (f' · Recommended: {item.recommended_penalty}' if item.recommended_penalty else '')
-        )
-        if not self.is_bound:
-            self.initial['violations'] = linked_ids
-
-    def save(self):
-        selected = self.cleaned_data['violations']
-        self.instance.violations.set(selected)
-        primary = selected.first()
-        self.instance.violation = primary
-        self.instance.offense_category = primary.category if primary else None
-        self.instance.classification_reviewed = True
-        self.instance.save(update_fields=('violation', 'offense_category', 'classification_reviewed', 'updated_at'))
-        return self.instance
-
-
-class PenaltyCatalogForm(forms.ModelForm):
-    class Meta:
-        model = PenaltyCatalog
-        fields = ('name', 'description', 'violation', 'duration_days', 'policy_reference')
-        widgets = {'description': forms.Textarea(attrs={'rows': 3})}
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        violations = Violation.objects.filter(active=True)
-        if self.instance.pk and self.instance.violation_id:
-            violations = Violation.objects.filter(
-                Q(active=True) | Q(pk=self.instance.violation_id),
-            )
-        self.fields['violation'].queryset = violations
-        for field in self.fields.values():
-            field.widget.attrs.setdefault(
-                'class',
-                'form-select' if isinstance(field.widget, forms.Select) else 'form-control',
-            )
-
-
-class SanctionAssignmentForm(forms.ModelForm):
-    class Meta:
-        model = DisciplinarySanction
-        fields = ('penalty', 'assigned_date', 'due_date', 'responsible_staff')
-        widgets = {
-            'assigned_date': forms.DateInput(attrs={'type': 'date'}),
-            'due_date': forms.DateInput(attrs={'type': 'date'}),
-        }
-
-    def __init__(self, *args, case, violation, **kwargs):
-        self.case = case
-        self.violation = violation
-        super().__init__(*args, **kwargs)
-        penalties = PenaltyCatalog.objects.filter(
-            active=True,
-            approved=True,
-            violation=violation,
-        )
-        self.fields['penalty'].queryset = penalties.select_related('violation')
-        self.fields['penalty'].label_from_instance = lambda item: (
-            f'{item.name}'
-            + (f' · {item.duration_days} day(s)' if item.duration_days else '')
-            + (f' · {item.policy_reference}' if item.policy_reference else '')
-            + (f' · {item.description}' if item.description else '')
-        )
-        self.fields['penalty'].help_text = (
-            f'Approved penalties for {violation.code} — {violation.name}; '
-            'the assignment will remain pending until an authorized reviewer approves it.'
-        )
-        self.fields['responsible_staff'].queryset = get_user_model().objects.filter(
-            Q(is_active=True, is_staff=True) |
-            Q(is_active=True, is_superuser=True) |
-            Q(
-                is_active=True,
-                committee_memberships__active=True,
-                committee_memberships__committee__active=True,
-            )
-        ).distinct()
-        for field in self.fields.values():
-            field.widget.attrs.setdefault(
-                'class',
-                'form-select' if isinstance(field.widget, forms.Select) else 'form-control',
-            )
-
-    def clean(self):
-        cleaned = super().clean()
-        if self.case.finding != DisciplinaryCase.Finding.SUBSTANTIATED:
-            raise ValidationError('A penalty can only be assigned after a substantiated finding.')
-        if not self.case.violation_id and not self.case.violations.exists():
-            raise ValidationError('Assign a violation to the case before assigning a penalty.')
-        penalty = cleaned.get('penalty')
-        if penalty and penalty.violation_id != self.violation.pk:
-            self.add_error('penalty', 'Choose an approved penalty for this case violation.')
-        assigned_date = cleaned.get('assigned_date')
-        due_date = cleaned.get('due_date')
-        if assigned_date and due_date and due_date < assigned_date:
-            self.add_error('due_date', 'The due date cannot be before the assigned date.')
-        return cleaned
-
-
-class SanctionStatusForm(forms.Form):
-    status = forms.ChoiceField(
-        choices=(
-            (DisciplinarySanction.Status.PENDING, 'Pending'),
-            (DisciplinarySanction.Status.IN_PROGRESS, 'In Progress'),
-            (DisciplinarySanction.Status.COMPLETED, 'Completed'),
-        ),
-        widget=forms.Select(attrs={'class': 'form-select'}),
-    )
-
 
 class CommitteeForm(forms.ModelForm):
     class Meta:

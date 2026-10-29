@@ -10,7 +10,6 @@ const PRIMARY   = '#183153';
 const ACCENT    = '#d5ad57';
 const SUCCESS   = '#22c55e';
 const WARNING   = '#f59e0b';
-const DANGER    = '#ef4444';
 const INFO      = '#06b6d4';
 const MUTED     = '#7a81a3';
 const FONT      = 'Inter, -apple-system, sans-serif';
@@ -58,43 +57,6 @@ new ApexCharts(document.getElementById('chart-source'), {
   dataLabels: { enabled: false },
 }).render();
 
-/* ── 4. Offense category bar ─────────────────────────────── */
-const catLabels = [{% for row in category_data %}"{{ row.offense_category__name }}"{% if not forloop.last %},{% endif %}{% endfor %}];
-const catCounts = [{% for row in category_data %}{{ row.total }}{% if not forloop.last %},{% endif %}{% endfor %}];
-if (catLabels.length) {
-  new ApexCharts(document.getElementById('chart-category'), {
-    ...BASE_OPTS,
-    chart:  { ...BASE_OPTS.chart, type: 'bar', height: Math.max(180, catLabels.length * 38 + 40) },
-    series: [{ name: 'Cases', data: catCounts }],
-    xaxis:  { categories: catLabels, labels: { style: { colors: MUTED, fontSize: '11px' } } },
-    yaxis:  { labels: { style: { colors: MUTED } }, min: 0, forceNiceScale: true },
-    colors: [PRIMARY],
-    plotOptions: { bar: { borderRadius: 5, horizontal: true, barHeight: '55%' } },
-    dataLabels: { enabled: false },
-  }).render();
-} else {
-  document.getElementById('chart-category').closest('.chart-placeholder').innerHTML =
-    '<div class="text-center text-secondary py-4 small">No categorised cases yet.</div>';
-}
-
-/* ── 5. Sanction bar ─────────────────────────────────────── */
-const sanctionLabels = {{ sanction_labels|safe }};
-const sanctionCounts = {{ sanction_counts|safe }};
-if (sanctionLabels.length) {
-  new ApexCharts(document.getElementById('chart-sanctions'), {
-    ...BASE_OPTS,
-    chart:  { ...BASE_OPTS.chart, type: 'bar', height: Math.max(180, sanctionLabels.length * 38 + 40) },
-    series: [{ name: 'Cases', data: sanctionCounts }],
-    xaxis:  { categories: sanctionLabels, labels: { style: { colors: MUTED, fontSize: '11px' } } },
-    yaxis:  { labels: { style: { colors: MUTED } }, min: 0, forceNiceScale: true },
-    colors: [DANGER],
-    plotOptions: { bar: { borderRadius: 5, horizontal: true, barHeight: '55%' } },
-    dataLabels: { enabled: false },
-  }).render();
-} else {
-  document.getElementById('chart-sanctions').closest('.chart-placeholder').innerHTML =
-    '<div class="text-center text-secondary py-4 small">No sanctions recorded yet.</div>';
-}
 </script>
 {% endblock %}
 
@@ -241,35 +203,6 @@ if (sanctionLabels.length) {
               </tr>
             </tbody>
           </table>
-        </div>
-      </article>
-    </div>
-  </div>
-
-  {# ── Row: offense categories + sanctions ──────────────────── #}
-  <div class="row row-cards g-3 mb-4">
-    <div class="col-12 col-lg-6">
-      <article class="card h-100">
-        <div class="card-header">
-          <h2 class="card-title">Top Offense Categories</h2>
-          <span class="ms-auto badge bg-secondary-lt">Top 10</span>
-        </div>
-        <div class="card-body">
-          <div class="chart-placeholder">
-            <div id="chart-category"></div>
-          </div>
-        </div>
-      </article>
-    </div>
-    <div class="col-12 col-lg-6">
-      <article class="card h-100">
-        <div class="card-header">
-          <h2 class="card-title">Sanctions Imposed</h2>
-        </div>
-        <div class="card-body">
-          <div class="chart-placeholder">
-            <div id="chart-sanctions"></div>
-          </div>
         </div>
       </article>
     </div>

@@ -13,18 +13,13 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from .forms import (
     AnswerForm,
-    CaseViolationForm,
     CommitteeForm,
     CommitteeMeetingForm,
     CommitteeMemberForm,
     ExtensionForm,
     OffenseCategoryForm,
-    PenaltyCatalogForm,
     ProfileSearchForm,
     ReportForm,
-    SanctionAssignmentForm,
-    SanctionStatusForm,
-    ViolationForm,
     ServeSummonsForm,
     StageForm,
     SummonsForm,
@@ -40,19 +35,14 @@ from .models import (
     CommitteeMeeting,
     DisciplinaryCase,
     DisciplinaryCommittee,
-    DisciplinarySanction,
     JugPostAssignment,
     KnightsMember,
     KnightsObservation,
     LegacyStudent,
     OffenseCategory,
-    PenaltyAuditLog,
-    PenaltyCatalog,
     ProbationRecord,
     SchoolCalendarDay,
     StudentSuspension,
-    Violation,
-    ViolationAuditLog,
 )
 from .permissions import (
     can_decide,
@@ -151,21 +141,6 @@ def _create_report_case(request, form, report_type):
             report.submitted_by = request.user
             report.submitted_at = timezone.now()
             report.save()
-            selected_violations = form.cleaned_data.get('violations')
-            if selected_violations:
-                case.violations.set(selected_violations)
-                primary_violation = selected_violations.first()
-                case.violation = primary_violation
-                case.offense_category = primary_violation.category
-                case.save(update_fields=('violation', 'offense_category', 'updated_at'))
-                for violation in selected_violations:
-                    CaseAuditLog.objects.create(
-                        case=case,
-                        actor=request.user,
-                        action='violation_reported',
-                        details=f'Initial allegation linked: {violation.code}. No finding has been made.',
-                    )
-
             person_name = form.cleaned_data.get('respondent_name')
             if person_name:
                 student_id = form.cleaned_data.get('respondent_student_id', '').strip()
@@ -266,410 +241,6 @@ def case_list(request):
 
 @login_required(login_url='login')
 @require_GET
-def violation_list(request):
-    require_official(request.user)
-    violations = Violation.objects.select_related('category')
-    query = request.GET.get('q', '').strip()
-    category = request.GET.get('category', '').strip()
-    severity = request.GET.get('severity', '').strip()
-    classification = request.GET.get('classification', '').strip()
-    show_archived = request.GET.get('archived') == '1'
-    violations = violations.filter(active=not show_archived)
-    if query:
-        violations = violations.filter(
-            Q(code__icontains=query) | Q(name__icontains=query) |
-            Q(description__icontains=query) | Q(applicable_rule__icontains=query) |
-            Q(policy_reference__icontains=query)
-        )
-    if category.isdigit():
-        violations = violations.filter(category_id=category)
-    if severity in Violation.Severity.values:
-        violations = violations.filter(severity=severity)
-    if classification in Violation.Classification.values:
-        violations = violations.filter(classification=classification)
-    page = Paginator(violations, 15).get_page(request.GET.get('page'))
-    return render(request, 'discipline/violation_list.html', {
-        **_navigation_context(request),
-        'violations': page,
-        'query': query,
-        'category_filter': category,
-        'severity_filter': severity,
-        'classification_filter': classification,
-        'show_archived': show_archived,
-        'categories': OffenseCategory.objects.filter(active=True),
-        'severity_choices': Violation.Severity.choices,
-        'classification_choices': Violation.Classification.choices,
-        'can_manage': is_discipline_officer(request.user),
-    })
-
-
-@login_required(login_url='login')
-@require_GET
-def violation_detail(request, pk):
-    require_official(request.user)
-    violation = get_object_or_404(Violation.objects.select_related('category'), pk=pk)
-    cases = visible_cases(request.user).filter(violation=violation).order_by('-opened_at')
-    return render(request, 'discipline/violation_detail.html', {
-        **_navigation_context(request),
-        'violation': violation,
-        'cases': cases[:20],
-        'can_manage': is_discipline_officer(request.user),
-    })
-
-
-@login_required(login_url='login')
-@require_http_methods(['GET', 'POST'])
-def violation_edit(request, pk=None):
-    require_officer(request.user)
-    violation = get_object_or_404(Violation, pk=pk) if pk else None
-    form = ViolationForm(request.POST or None, instance=violation)
-    if request.method == 'POST' and form.is_valid():
-        with transaction.atomic():
-            saved_violation = form.save(commit=False)
-            if violation is None:
-                saved_violation.created_by = request.user
-            saved_violation.save()
-            ViolationAuditLog.objects.create(
-                violation=saved_violation,
-                actor=request.user,
-                action='updated' if violation else 'created',
-                details=f'Violation {saved_violation.code} saved.',
-            )
-        messages.success(request, 'Violation saved.')
-        return redirect('discipline:violation_detail', pk=saved_violation.pk)
-    return render(request, 'discipline/violation_form.html', {
-        **_navigation_context(request),
-        'form': form,
-        'violation': violation,
-    })
-
-
-@login_required(login_url='login')
-@require_POST
-def violation_archive(request, pk):
-    require_officer(request.user)
-    violation = get_object_or_404(Violation, pk=pk)
-    violation.active = not violation.active
-    violation.save(update_fields=['active', 'updated_at'])
-    ViolationAuditLog.objects.create(
-        violation=violation,
-        actor=request.user,
-        action='restored' if violation.active else 'archived',
-        details=f'Violation {violation.code} {"restored" if violation.active else "archived"}.',
-    )
-    messages.success(request, 'Violation restored.' if violation.active else 'Violation archived.')
-    return redirect('discipline:violation_detail', pk=violation.pk)
-
-
-@login_required(login_url='login')
-@require_http_methods(['GET', 'POST'])
-def case_violation_assign(request, pk):
-    case = _case_visible_or_404(request, pk)
-    require_officer(request.user)
-    if not can_manage_confidential(request.user, case):
-        raise PermissionDenied('You are not authorized to classify this case.')
-    form = CaseViolationForm(request.POST or None, instance=case)
-    if request.method == 'POST' and form.is_valid():
-        previous = list(case.violations.values_list('code', flat=True))
-        form.save()
-        current = list(case.violations.values_list('code', flat=True))
-        _record_case_access(
-            request, case,
-            f'violations_linked:{",".join(previous) or "none"}->{",".join(current)}',
-        )
-        messages.success(request, 'Reported violation(s) linked to the case for authorized review.')
-        return redirect('discipline:case_detail', pk=case.pk)
-    return render(request, 'discipline/action_form.html', {
-        **_navigation_context(request),
-        'form': form,
-        'case': case,
-        'form_title': 'Link violation to case',
-    })
-
-
-def _visible_sanctions(user):
-    cases = visible_cases(user)
-    if not can_manage_confidential(user):
-        cases = cases.filter(
-            Q(assigned_officer=user) |
-            Q(
-                committee_meetings__committee__active=True,
-                committee_meetings__committee__members__user=user,
-                committee_meetings__committee__members__active=True,
-            )
-        )
-    return DisciplinarySanction.objects.filter(
-        Q(case__in=cases) | Q(responsible_staff=user),
-    ).select_related(
-        'case', 'violation', 'penalty', 'responsible_staff', 'assigned_by', 'reviewed_by',
-    ).distinct()
-
-
-@login_required(login_url='login')
-@require_GET
-def sanction_list(request):
-    if not is_official(request.user) and not DisciplinarySanction.objects.filter(
-        responsible_staff=request.user,
-    ).exists():
-        raise PermissionDenied('This action is limited to authorized personnel or assigned staff.')
-    query = request.GET.get('q', '').strip()
-    status = request.GET.get('status', '').strip()
-    show_archived = request.GET.get('archived') == '1'
-    penalties = PenaltyCatalog.objects.select_related('violation').filter(active=not show_archived)
-    if not is_official(request.user):
-        penalties = penalties.none()
-    sanctions = _visible_sanctions(request.user)
-    if query:
-        penalties = penalties.filter(
-            Q(name__icontains=query) | Q(description__icontains=query) |
-            Q(violation__code__icontains=query) | Q(violation__name__icontains=query)
-        )
-        sanctions = sanctions.filter(
-            Q(name__icontains=query) | Q(case__reference__icontains=query) |
-            Q(violation__code__icontains=query) | Q(violation__name__icontains=query)
-        )
-    if status == DisciplinarySanction.Status.OVERDUE:
-        sanctions = sanctions.filter(
-            status__in=(DisciplinarySanction.Status.PENDING, DisciplinarySanction.Status.IN_PROGRESS),
-            review_status=DisciplinarySanction.ReviewStatus.APPROVED,
-            due_date__lt=timezone.localdate(),
-        )
-    elif status == DisciplinarySanction.Status.PENDING:
-        sanctions = sanctions.filter(
-            status=DisciplinarySanction.Status.PENDING,
-        ).filter(
-            Q(review_status=DisciplinarySanction.ReviewStatus.PENDING) |
-            (
-                Q(review_status=DisciplinarySanction.ReviewStatus.APPROVED) &
-                (Q(due_date__isnull=True) | Q(due_date__gte=timezone.localdate()))
-            )
-        )
-    elif status == DisciplinarySanction.Status.IN_PROGRESS:
-        sanctions = sanctions.filter(
-            status=DisciplinarySanction.Status.IN_PROGRESS,
-            review_status=DisciplinarySanction.ReviewStatus.APPROVED,
-        ).filter(Q(due_date__isnull=True) | Q(due_date__gte=timezone.localdate()))
-    elif status in (
-        DisciplinarySanction.Status.COMPLETED,
-        DisciplinarySanction.Status.CANCELLED,
-    ):
-        sanctions = sanctions.filter(status=status)
-    return render(request, 'discipline/sanction_list.html', {
-        **_navigation_context(request),
-        'penalties': penalties.order_by('name'),
-        'sanctions': sanctions.order_by('-assigned_date', '-pk')[:100],
-        'query': query,
-        'status_filter': status,
-        'show_archived': show_archived,
-        'status_choices': DisciplinarySanction.Status.choices,
-        'can_manage': is_discipline_officer(request.user),
-        'can_approve': can_finalize_decision(request.user),
-        'is_official': is_official(request.user),
-        'today': timezone.localdate(),
-    })
-
-
-@login_required(login_url='login')
-@require_http_methods(['GET', 'POST'])
-def penalty_edit(request, pk=None):
-    require_officer(request.user)
-    penalty = get_object_or_404(PenaltyCatalog, pk=pk) if pk else None
-    form = PenaltyCatalogForm(request.POST or None, instance=penalty)
-    if request.method == 'POST' and form.is_valid():
-        with transaction.atomic():
-            saved_penalty = form.save(commit=False)
-            if penalty is None:
-                saved_penalty.created_by = request.user
-            else:
-                saved_penalty.approved = False
-                saved_penalty.approved_by = None
-                saved_penalty.approved_at = None
-            saved_penalty.save()
-            PenaltyAuditLog.objects.create(
-                penalty=saved_penalty,
-                actor=request.user,
-                action='updated' if penalty else 'created',
-                details='Catalog entry saved; approval is required before assignment.',
-            )
-        messages.success(request, 'Penalty saved. It must be approved before it can be assigned.')
-        return redirect('discipline:sanction_list')
-    return render(request, 'discipline/penalty_form.html', {
-        **_navigation_context(request),
-        'form': form,
-        'penalty': penalty,
-    })
-
-
-@login_required(login_url='login')
-@require_POST
-def penalty_approve(request, pk):
-    require_final_decision_authority(request.user)
-    penalty = get_object_or_404(PenaltyCatalog, pk=pk, active=True)
-    if penalty.approved:
-        raise PermissionDenied('This penalty is already approved.')
-    policy_basis = request.POST.get('policy_basis', '').strip()
-    if not policy_basis:
-        messages.error(request, 'Record the policy basis before approving this penalty.')
-        return redirect('discipline:sanction_list')
-    penalty.approved = True
-    penalty.approved_by = request.user
-    penalty.approved_at = timezone.now()
-    penalty.save(update_fields=('approved', 'approved_by', 'approved_at', 'updated_at'))
-    PenaltyAuditLog.objects.create(
-        penalty=penalty,
-        actor=request.user,
-        action='approved',
-        details=policy_basis,
-    )
-    messages.success(request, 'Penalty approved for assignment under the recorded policy basis.')
-    return redirect('discipline:sanction_list')
-
-
-@login_required(login_url='login')
-@require_POST
-def penalty_archive(request, pk):
-    require_officer(request.user)
-    penalty = get_object_or_404(PenaltyCatalog, pk=pk)
-    penalty.active = not penalty.active
-    penalty.save(update_fields=('active', 'updated_at'))
-    PenaltyAuditLog.objects.create(
-        penalty=penalty,
-        actor=request.user,
-        action='restored' if penalty.active else 'archived',
-        details=f'Penalty {"restored" if penalty.active else "archived"}.',
-    )
-    messages.success(request, 'Penalty restored.' if penalty.active else 'Penalty archived.')
-    return redirect('discipline:sanction_list')
-
-
-@login_required(login_url='login')
-@require_http_methods(['GET', 'POST'])
-def sanction_assign(request, pk, violation_pk=None):
-    case = _case_visible_or_404(request, pk)
-    require_officer(request.user)
-    if not can_manage_confidential(request.user, case):
-        raise PermissionDenied('You are not authorized to assign a penalty to this case.')
-    linked_violations = case.violations.all()
-    if case.violation_id and not linked_violations.filter(pk=case.violation_id).exists():
-        linked_violations = list(linked_violations) + [case.violation]
-    if violation_pk is None:
-        selected_violation = linked_violations[0] if linked_violations else None
-    else:
-        allowed_ids = [item.pk for item in linked_violations]
-        selected_violation = get_object_or_404(Violation, pk=violation_pk, pk__in=allowed_ids)
-    if selected_violation is None:
-        raise Http404('Link a violation to the case before assigning a penalty.')
-    form = SanctionAssignmentForm(request.POST or None, case=case, violation=selected_violation)
-    if request.method == 'POST' and form.is_valid():
-        with transaction.atomic():
-            penalty = form.cleaned_data['penalty']
-            sanction = form.save(commit=False)
-            sanction.case = case
-            sanction.violation = selected_violation
-            sanction.name = penalty.name
-            sanction.description = penalty.description
-            sanction.duration_days = penalty.duration_days
-            sanction.assigned_by = request.user
-            sanction.review_status = DisciplinarySanction.ReviewStatus.PENDING
-            sanction.status = DisciplinarySanction.Status.PENDING
-            sanction.save()
-            CaseAction.objects.create(
-                case=case,
-                action_type=CaseAction.ActionType.SANCTION,
-                details=f'Penalty proposed for authorized review: {sanction.name}.',
-                actor=request.user,
-            )
-            _record_case_access(request, case, 'penalty_proposed')
-        messages.success(request, 'Penalty submitted for authorized review; it remains pending until approved.')
-        return redirect('discipline:case_detail', pk=case.pk)
-    return render(request, 'discipline/action_form.html', {
-        **_navigation_context(request),
-        'form': form,
-        'case': case,
-        'form_title': f'Assign penalty for {selected_violation.code} to {case.reference}',
-        'selected_violation': selected_violation,
-    })
-
-
-@login_required(login_url='login')
-@require_POST
-def sanction_review(request, pk):
-    require_final_decision_authority(request.user)
-    sanction = get_object_or_404(_visible_sanctions(request.user), pk=pk)
-    if sanction.review_status != DisciplinarySanction.ReviewStatus.PENDING:
-        raise PermissionDenied('Only penalties awaiting review can be approved or rejected.')
-    decision = request.POST.get('decision')
-    if decision not in ('approve', 'reject'):
-        raise PermissionDenied('Choose a valid penalty review action.')
-    review_notes = request.POST.get('review_notes', '').strip()
-    if not review_notes:
-        messages.error(request, 'Record the policy basis for this review.')
-        return redirect('discipline:sanction_list')
-    if sanction.case.finding != DisciplinaryCase.Finding.SUBSTANTIATED:
-        raise PermissionDenied('A penalty can only be approved after a substantiated finding.')
-    sanction.review_status = (
-        DisciplinarySanction.ReviewStatus.APPROVED
-        if decision == 'approve' else DisciplinarySanction.ReviewStatus.REJECTED
-    )
-    sanction.reviewed_by = request.user
-    sanction.reviewed_at = timezone.now()
-    sanction.review_notes = review_notes
-    if decision == 'reject':
-        sanction.status = DisciplinarySanction.Status.CANCELLED
-    sanction.save()
-    CaseAction.objects.create(
-        case=sanction.case,
-        action_type=CaseAction.ActionType.SANCTION,
-        authority=request.user.get_full_name() or request.user.get_username(),
-        details=f'Penalty {decision}d: {sanction.name}. {review_notes}',
-        actor=request.user,
-    )
-    _record_case_access(request, sanction.case, f'penalty_{decision}d')
-    messages.success(request, f'Penalty {decision}d.')
-    return redirect('discipline:case_detail', pk=sanction.case_id)
-
-
-@login_required(login_url='login')
-@require_POST
-def sanction_status_update(request, pk):
-    sanction = get_object_or_404(_visible_sanctions(request.user), pk=pk)
-    if not (
-        is_discipline_officer(request.user) or
-        sanction.responsible_staff_id == request.user.pk
-    ):
-        raise PermissionDenied('Only the responsible staff member or Discipline Office may update this penalty.')
-    if sanction.review_status != DisciplinarySanction.ReviewStatus.APPROVED:
-        raise PermissionDenied('A penalty must be approved before its status can be updated.')
-    if sanction.status in (
-        DisciplinarySanction.Status.COMPLETED,
-        DisciplinarySanction.Status.CANCELLED,
-    ):
-        raise PermissionDenied('Completed or cancelled penalties cannot be changed.')
-    form = SanctionStatusForm(request.POST)
-    if not form.is_valid():
-        messages.error(request, 'Choose a valid penalty status.')
-        return redirect('discipline:sanction_list')
-    previous_status = sanction.status
-    sanction.status = form.cleaned_data['status']
-    sanction.completed_at = (
-        timezone.now()
-        if sanction.status == DisciplinarySanction.Status.COMPLETED
-        else None
-    )
-    sanction.save(update_fields=('status', 'completed_at', 'updated_at'))
-    CaseAction.objects.create(
-        case=sanction.case,
-        action_type=CaseAction.ActionType.SANCTION,
-        details=f'Penalty status updated: {previous_status} → {sanction.status}.',
-        actor=request.user,
-    )
-    _record_case_access(request, sanction.case, 'penalty_status_updated')
-    messages.success(request, 'Penalty status updated.')
-    return redirect('discipline:sanction_list')
-
-
-@login_required(login_url='login')
-@require_GET
 def case_detail(request, pk):
     case = _case_visible_or_404(request, pk)
     can_view_confidential = can_manage_confidential(request.user, case)
@@ -688,13 +259,12 @@ def case_detail(request, pk):
         visible_summonses = case.summonses.filter(respondent__account=request.user).select_related('respondent')
         visible_answers = case.answers.filter(respondent__account=request.user).select_related('respondent')
 
-    case_violations = list(case.violations.select_related('category').all())
-    if case.violation_id and all(item.pk != case.violation_id for item in case_violations):
-        case_violations.insert(0, case.violation)
     return render(request, 'discipline/case_detail.html', {
         **_navigation_context(request),
         'case': case,
-        'case_violations': case_violations,
+        'visible_actions': case.actions.exclude(
+            action_type=CaseAction.ActionType.SANCTION,
+        ).select_related('actor'),
         'case_documents': case.documents.all() if can_view_confidential else (),
         'visible_summonses': visible_summonses,
         'visible_answers': visible_answers,
@@ -745,7 +315,7 @@ def case_action(request, pk):
         action_type = form.cleaned_data['action_type']
         if action_type == CaseAction.ActionType.FINDING:
             require_decision_authority(request.user)
-        elif action_type in (CaseAction.ActionType.DECISION, CaseAction.ActionType.SANCTION) or (
+        elif action_type == CaseAction.ActionType.DECISION or (
             action_type == CaseAction.ActionType.STATUS
             and form.cleaned_data['to_status'] == DisciplinaryCase.Status.CLOSED
         ):
@@ -763,7 +333,7 @@ def case_action(request, pk):
                 case.status = action.to_status
                 if action.to_status == DisciplinaryCase.Status.CLOSED:
                     case.closed_at = timezone.now()
-            if action_type in (CaseAction.ActionType.FINDING, CaseAction.ActionType.DECISION, CaseAction.ActionType.SANCTION):
+            if action_type in (CaseAction.ActionType.FINDING, CaseAction.ActionType.DECISION):
                 if action.finding:
                     case.finding = action.finding
                 if action.recommendation:
@@ -772,13 +342,6 @@ def case_action(request, pk):
                 case.decision_authority = action.authority
                 case.decision_date = timezone.localdate()
                 case.decision_notes = action.details
-                if action.final_sanction:
-                    case.final_sanction = action.final_sanction
-            elif action_type == CaseAction.ActionType.SANCTION:
-                case.final_sanction = action.final_sanction
-                case.decision_authority = action.authority
-                case.decision_date = timezone.localdate()
-                case.sanction_details = action.details
             case.save()
             _record_case_access(request, case, f'action_{action_type}')
         messages.success(request, 'The case action was recorded.')
@@ -1079,16 +642,8 @@ def confidential_profile(request):
             Q(report__respondent_student_id=student_id) |
             Q(report__complainant_student_id=student_id) |
             Q(people__student_id=student_id)
-        ).select_related('violation').prefetch_related(
-            'violations',
-            'sanctions__violation',
         ).distinct().order_by('-opened_at')
         for case in case_history:
-            history_violations = list(case.violations.all())
-            if case.violation_id and all(item.pk != case.violation_id for item in history_violations):
-                history_violations.insert(0, case.violation)
-            case.history_violations = history_violations
-            case.history_sanctions = list(case.sanctions.all())
             CaseAuditLog.objects.create(case=case, actor=request.user, action='student_history_viewed', details=f'Student ID search: {student_id}')
     return render(request, 'discipline/confidential_profile.html', {'form': form, 'cases': case_history})
 
@@ -1163,14 +718,6 @@ def reports(request):
         elif row['source_type'] == 'incident':
             incident_count = row['total']
 
-    # --- Offense category breakdown ---
-    category_data = (
-        cases.filter(offense_category__isnull=False)
-        .values('offense_category__name')
-        .annotate(total=Count('id'))
-        .order_by('-total')[:10]
-    )
-
     # --- Month-by-month trend (last 12 months) ---
     twelve_months_ago = timezone.now() - timezone.timedelta(days=365)
     monthly_raw = (
@@ -1192,16 +739,6 @@ def reports(request):
     for row in finding_data:
         finding_map[row['finding']] = row['total']
 
-    # --- Sanction breakdown ---
-    sanction_data = (
-        cases.exclude(final_sanction='none')
-        .values('final_sanction')
-        .annotate(total=Count('id'))
-        .order_by('-total')
-    )
-    sanction_labels = [DisciplinaryCase.Sanction(row['final_sanction']).label for row in sanction_data]
-    sanction_counts = [row['total'] for row in sanction_data]
-
     # Build a list of (code, label, count) for the status table
     status_rows = [
         (code, label, status_map.get(code, 0))
@@ -1216,12 +753,9 @@ def reports(request):
         'resolved_count':  resolved_count,
         'complaint_count': complaint_count,
         'incident_count':  incident_count,
-        'category_data':   list(category_data),
         'monthly_labels':  monthly_labels,
         'monthly_counts':  monthly_counts,
         'finding_map':     finding_map,
-        'sanction_labels': sanction_labels,
-        'sanction_counts': sanction_counts,
         'status_rows':     status_rows,
         'finding_choices': DisciplinaryCase.Finding.choices,
         **_navigation_context(request),
@@ -1268,7 +802,6 @@ def intake(request):
         'form': form,
         'report_type': report_type,
         'can_file_incident': is_official(request.user),
-        'can_identify_violations': is_discipline_officer(request.user),
         **_navigation_context(request),
     })
 

@@ -93,7 +93,6 @@
                 <th>Student ID</th>
                 <th>Name</th>
                 <th>Level</th>
-                <th>Violation</th>
                 <th>Date</th>
                 <th>Status</th>
               </tr>
@@ -108,7 +107,6 @@
                   </a>
                 </td>
                 <td>{{ case.report.respondent_year_section|default:case.report.respondent_program|default:"—" }}</td>
-                <td>{{ case.offense_category.name|default:case.offense_description|default:"—"|truncatechars:36 }}</td>
                 <td class="text-secondary text-nowrap">{{ case.opened_at|date:"M j, Y" }}</td>
                 <td>
                   <span class="badge
@@ -121,7 +119,7 @@
               </tr>
               {% empty %}
               <tr>
-                <td colspan="6">
+                <td colspan="5">
                   <div class="empty py-4">
                     <div class="empty-icon"><i class="fas fa-folder-open" aria-hidden="true"></i></div>
                     <p class="empty-title">No discipline records yet</p>

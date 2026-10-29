@@ -18,8 +18,6 @@
     currentType = type;
     const typeSelect = $('report_type');
     if (typeSelect) typeSelect.value = type;
-    const typeTitle = $('report-type-title');
-    if (typeTitle) typeTitle.textContent = type === 'incident' ? 'Incident report details' : 'Written complaint details';
 
     $('section-complainant').style.display = type === 'complaint' ? '' : 'none';
     $('section-officer').style.display     = type === 'incident'  ? '' : 'none';
@@ -69,7 +67,7 @@
     const label = currentType === 'complaint' ? 'Written Complaint' : 'Incident Report';
     const ok = confirm(
       `You are about to submit a ${label} to the Discipline Office.\n\n` +
-      'Submission does not determine responsibility or impose any sanction. ' +
+      'Submission does not determine responsibility or decide a disciplinary outcome. ' +
       'The report will be reviewed by authorized personnel.\n\n' +
       'Proceed?'
     );
@@ -89,7 +87,6 @@
   document.addEventListener('DOMContentLoaded', function () {
     const typeSelect = $('report_type');
     if (typeSelect) typeSelect.addEventListener('change', () => showType(typeSelect.value));
-
     const form = $('intake-form');
     if (form) {
       form.addEventListener('submit', function (e) {
@@ -122,7 +119,7 @@
       <h1 class="page-title">Discipline Office Intake</h1>
       <p class="text-secondary mb-0 mt-1">
         Submit a written complaint or file an incident report for review by the Discipline Office.
-        Submission does not determine responsibility or impose a sanction.
+        Submission does not determine responsibility or decide a disciplinary outcome.
       </p>
     </div>
   </div>
@@ -153,7 +150,7 @@
     <div id="section-form">
       <section class="intake-section mb-4" aria-labelledby="step-type-heading">
         <h2 class="intake-section-title" id="step-type-heading">
-          <span class="intake-step-badge">1</span> <span id="report-type-title">{% if report_type == 'incident' %}Incident report details{% else %}Written complaint details{% endif %}</span>
+          <span class="intake-step-badge">1</span> Incident information
         </h2>
         <div class="card">
           <div class="card-body">
@@ -281,7 +278,7 @@
       {# ── Step 3 — Student / Respondent information ─────────── #}
       <section class="intake-section mb-4" aria-labelledby="step-student-heading">
         <h2 class="intake-section-title" id="step-student-heading">
-          <span class="intake-step-badge">3</span> Student information
+          <span class="intake-step-badge">2</span> Student information
           <span class="text-secondary fs-6 fw-normal ms-2">(if known)</span>
         </h2>
         <div class="card">
@@ -328,7 +325,7 @@
       {# ── Step 4 — Incident details ─────────────────────────── #}
       <section class="intake-section mb-4" aria-labelledby="step-incident-heading">
         <h2 class="intake-section-title" id="step-incident-heading">
-          <span class="intake-step-badge">4</span> Incident details
+          Incident details
         </h2>
         <div class="card">
           <div class="card-body">
@@ -373,35 +370,10 @@
         </div>
       </section>
 
-      {# ── Step 5 — Initial violation identification ───────── #}
-      <section class="intake-section mb-4" aria-labelledby="step-violation-heading">
-        <h2 class="intake-section-title" id="step-violation-heading">
-          <span class="intake-step-badge">5</span> Violation identification
-        </h2>
-        <div class="card">
-          <div class="card-body">
-            {% if can_identify_violations %}
-              <label class="form-label" for="id_violations">Reported violation(s), if known</label>
-              {{ form.violations }}
-              {% for e in form.violations.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
-              <div class="form-hint">
-                Select only possible violations to guide authorized review. This records an allegation,
-                not a finding of responsibility; staff may identify or update violations during case review.
-              </div>
-            {% else %}
-              <p class="mb-0 text-secondary">
-                Violation identification is completed by authorized Discipline Office personnel during review.
-                Submitting this report does not determine responsibility.
-              </p>
-            {% endif %}
-          </div>
-        </div>
-      </section>
-
-      {# ── Step 6 — Witnesses and evidence ──────────────────── #}
+      {# ── Supporting incident information ──────────────────── #}
       <section class="intake-section mb-4" aria-labelledby="step-witness-heading">
         <h2 class="intake-section-title" id="step-witness-heading">
-          <span class="intake-step-badge">6</span> Witnesses &amp; supporting information
+          Witnesses &amp; supporting information
           <span class="text-secondary fs-6 fw-normal ms-2">(optional)</span>
         </h2>
         <div class="card">
@@ -428,10 +400,10 @@
         </div>
       </section>
 
-      {# ── Step 6 — Acknowledgment & submission ─────────────── #}
+      {# ── Step 4 — Acknowledgment & submission ─────────────── #}
       <section class="intake-section mb-4" aria-labelledby="step-submit-heading">
         <h2 class="intake-section-title" id="step-submit-heading">
-          <span class="intake-step-badge">7</span> Review &amp; submit
+          <span class="intake-step-badge">4</span> Review and submission
         </h2>
         <div class="card">
           <div class="card-body">
@@ -443,7 +415,7 @@
                   <label class="form-check-label" for="{{ form.acknowledgment.id_for_label }}">
                     I confirm that the information I have provided is accurate and complete to the best
                     of my knowledge. I understand that this submission is for authorised Discipline Office
-                    review and does not constitute a finding of responsibility or an imposed sanction.
+                    review and does not constitute a finding of responsibility or a disciplinary outcome.
                     <span class="text-danger" aria-hidden="true">*</span>
                   </label>
                   {% for e in form.acknowledgment.errors %}
@@ -456,7 +428,7 @@
                   <label class="form-check-label" for="id_acknowledgment">
                     I confirm that the information I have provided is accurate and complete to the best
                     of my knowledge. I understand that this submission is for authorised Discipline Office
-                    review and does not constitute a finding of responsibility or an imposed sanction.
+                    review and does not constitute a finding of responsibility or a disciplinary outcome.
                     <span class="text-danger" aria-hidden="true">*</span>
                   </label>
                 </div>
@@ -468,8 +440,8 @@
               <i class="fas fa-triangle-exclamation mt-1 flex-shrink-0" aria-hidden="true"></i>
               <div>
                 <strong>Important:</strong> Submitting this form does not automatically mean
-                that any student has been found responsible or that a disciplinary penalty will be
-                imposed. All submissions are subject to authorised review in accordance with
+                that any student has been found responsible or that a disciplinary decision has been
+                made. All submissions are subject to authorised review in accordance with
                 school policy.
               </div>
             </div>

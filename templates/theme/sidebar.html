@@ -94,20 +94,6 @@
                   <span class="nav-link-title">Incident Log</span>
                 </a>
               </li>
-              <li class="nav-item">
-                <a class="nav-link {% if route == 'violation_list' or route == 'violation_create' or route == 'violation_detail' or route == 'violation_edit' or route == 'case_violation_assign' %}active{% endif %}"
-                   href="{% url 'discipline:violation_list' %}">
-                  <span class="nav-link-icon"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i></span>
-                  <span class="nav-link-title">Violations</span>
-                </a>
-              </li>
-              <li class="nav-item">
-                <a class="nav-link {% if route == 'sanction_list' or route == 'penalty_create' or route == 'penalty_edit' or route == 'sanction_assign' or route == 'sanction_assign_for_violation' or route == 'sanction_review' or route == 'sanction_status_update' %}active{% endif %}"
-                   href="{% url 'discipline:sanction_list' %}">
-                  <span class="nav-link-icon"><i class="fas fa-clipboard-check" aria-hidden="true"></i></span>
-                  <span class="nav-link-title">Sanctions/Penalties</span>
-                </a>
-              </li>
               {% endif %}
 
             </ul>

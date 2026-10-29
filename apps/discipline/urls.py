@@ -1,4 +1,5 @@
 from django.urls import path
+from django.views.generic.base import RedirectView
 
 from . import views
 
@@ -6,6 +7,7 @@ app_name = 'discipline'
 
 urlpatterns = [
     path('', views.dashboard, name='dashboard'),
+    path('management/', RedirectView.as_view(pattern_name='discipline:dashboard'), name='management_legacy_redirect'),
     path('cases/', views.case_list, name='case_list'),
     path('cases/complaint/new/', views.complaint_create, name='complaint_create'),
     path('cases/incident/new/', views.incident_create, name='incident_create'),
@@ -17,21 +19,6 @@ urlpatterns = [
     path('cases/<int:pk>/summons/<int:summons_id>/extension/', views.summons_extension, name='summons_extension'),
     path('cases/<int:pk>/answer/', views.answer_submit, name='answer_submit'),
     path('cases/<int:pk>/documents/<int:document_pk>/download/', views.case_document_download, name='case_document_download'),
-    path('cases/<int:pk>/violations/assign/', views.case_violation_assign, name='case_violation_assign'),
-    path('cases/<int:pk>/violations/<int:violation_pk>/sanctions/assign/', views.sanction_assign, name='sanction_assign_for_violation'),
-    path('cases/<int:pk>/sanctions/assign/', views.sanction_assign, name='sanction_assign'),
-    path('sanctions/', views.sanction_list, name='sanction_list'),
-    path('sanctions/new/', views.penalty_edit, name='penalty_create'),
-    path('sanctions/<int:pk>/edit/', views.penalty_edit, name='penalty_edit'),
-    path('sanctions/<int:pk>/approve/', views.penalty_approve, name='penalty_approve'),
-    path('sanctions/<int:pk>/archive/', views.penalty_archive, name='penalty_archive'),
-    path('sanctions/assignments/<int:pk>/review/', views.sanction_review, name='sanction_review'),
-    path('sanctions/assignments/<int:pk>/status/', views.sanction_status_update, name='sanction_status_update'),
-    path('violations/', views.violation_list, name='violation_list'),
-    path('violations/new/', views.violation_edit, name='violation_create'),
-    path('violations/<int:pk>/', views.violation_detail, name='violation_detail'),
-    path('violations/<int:pk>/edit/', views.violation_edit, name='violation_edit'),
-    path('violations/<int:pk>/archive/', views.violation_archive, name='violation_archive'),
     path('policy/', views.policy_list, name='policy_list'),
     path('policy/new/', views.policy_edit, name='policy_create'),
     path('policy/<int:pk>/', views.policy_detail, name='policy_detail'),
