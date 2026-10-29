@@ -1,0 +1,28 @@
+{% extends "theme/base.html" %}
+{% block title %}Violations | Discipline Office{% endblock %}
+{% block content %}
+<main class="container-xl">
+  <div class="page-header mb-4 d-flex flex-wrap justify-content-between align-items-center gap-3">
+    <div><div class="page-pretitle">Policy-linked records</div><h1 class="page-title">Violations</h1></div>
+    {% if can_manage %}<a class="btn btn-primary" href="{% url 'discipline:violation_create' %}"><i class="fas fa-plus me-2" aria-hidden="true"></i>Add violation</a>{% endif %}
+  </div>
+  <form method="get" class="card card-body mb-3">
+    <div class="row g-2 align-items-end">
+      <div class="col-12 col-md-4"><label class="form-label" for="violation-search">Search</label><input id="violation-search" class="form-control" type="search" name="q" value="{{ query }}" placeholder="Code, name, rule, policy"></div>
+      <div class="col-6 col-md-2"><label class="form-label" for="category">Category</label><select class="form-select" id="category" name="category"><option value="">All categories</option>{% for category in categories %}<option value="{{ category.pk }}" {% if category_filter == category.pk|stringformat:'s' %}selected{% endif %}>{{ category.name }}</option>{% endfor %}</select></div>
+      <div class="col-6 col-md-2"><label class="form-label" for="severity">Severity</label><select class="form-select" id="severity" name="severity"><option value="">All severities</option>{% for value,label in severity_choices %}<option value="{{ value }}" {% if severity_filter == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <div class="col-6 col-md-2"><label class="form-label" for="classification">Classification</label><select class="form-select" id="classification" name="classification"><option value="">All classifications</option>{% for value,label in classification_choices %}<option value="{{ value }}" {% if classification_filter == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <div class="col-6 col-md-2"><div class="form-check mb-2"><input class="form-check-input" id="archived" type="checkbox" name="archived" value="1" {% if show_archived %}checked{% endif %}><label class="form-check-label" for="archived">Archived</label><button class="btn btn-outline-primary btn-sm ms-2" type="submit">Filter</button></div></div>
+    </div>
+  </form>
+  <section class="card">
+    <div class="table-responsive"><table class="table table-vcenter card-table">
+      <thead><tr><th>Code</th><th>Violation</th><th>Category</th><th>Classification</th><th>Severity</th><th>Applicable rule</th><th>Status</th></tr></thead>
+      <tbody>{% for violation in violations %}
+        <tr><td class="font-monospace fw-semibold">{{ violation.code }}</td><td><a href="{% url 'discipline:violation_detail' violation.pk %}">{{ violation.name }}</a></td><td>{{ violation.category.name }}</td><td>{{ violation.get_classification_display }}</td><td>{{ violation.get_severity_display }}</td><td>{{ violation.applicable_rule|default:violation.policy_reference|default:'—' }}</td><td>{% if violation.active %}<span class="badge bg-success-lt">Active</span>{% else %}<span class="badge bg-secondary-lt">Archived</span>{% endif %}</td></tr>
+      {% empty %}<tr><td colspan="7" class="text-center text-secondary py-4">No matching violations.</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% if violations.has_other_pages %}<div class="card-footer d-flex justify-content-between"><span>Page {{ violations.number }} of {{ violations.paginator.num_pages }}</span><div class="btn-list">{% if violations.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="?q={{ query|urlencode }}&category={{ category_filter }}&severity={{ severity_filter }}&classification={{ classification_filter }}&archived={% if show_archived %}1{% endif %}&page={{ violations.previous_page_number }}">Previous</a>{% endif %}{% if violations.has_next %}<a class="btn btn-sm btn-outline-secondary" href="?q={{ query|urlencode }}&category={{ category_filter }}&severity={{ severity_filter }}&classification={{ classification_filter }}&archived={% if show_archived %}1{% endif %}&page={{ violations.next_page_number }}">Next</a>{% endif %}</div></div>{% endif %}
+  </section>
+</main>
+{% endblock %}

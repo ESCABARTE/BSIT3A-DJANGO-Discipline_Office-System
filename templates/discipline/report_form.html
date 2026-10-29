@@ -3,8 +3,8 @@
 {% block content %}
 <main class="container-xl">
   <div class="page-header mb-4"><div><div class="page-pretitle">Discipline Office · Intake</div><h1 class="page-title">{% if report_type == 'complaint' %}Submit a written complaint{% else %}File an incident report{% endif %}</h1><p class="text-secondary mb-0">Reports are reviewed by authorized personnel; submission does not determine responsibility or impose a sanction.</p></div></div>
-  <div class="alert alert-info" role="note">Only submit information you are authorized to share. Contact the Discipline Office for instructions on attaching signed documents or evidence.</div>
-  <form method="post" class="card" novalidate>{% csrf_token %}<div class="card-body"><div class="row g-3">
+  <div class="alert alert-info" role="note">Only submit information you are authorized to share. Submitted evidence is restricted to authorized case personnel.</div>
+  <form method="post" enctype="multipart/form-data" class="card" novalidate>{% csrf_token %}<div class="card-body"><div class="row g-3">
   {% for field in form %}{% if not field.is_hidden %}<div class="col-12 {% if field.name == 'narration' or field.name == 'witness_information' %}col-lg-12{% elif field.name == 'acknowledgment' %}col-lg-12{% else %}col-md-6{% endif %}"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<span class="text-danger" aria-hidden="true"> *</span>{% endif %}</label>{{ field }}{% if field.help_text %}<div class="form-hint">{{ field.help_text }}</div>{% endif %}{% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}</div>{% endif %}{% endfor %}
   {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
   </div></div><div class="card-footer d-flex justify-content-between"><a class="btn btn-outline-secondary" href="{% url 'discipline:case_list' %}">Cancel</a><button class="btn btn-primary" type="submit">Submit for review</button></div></form>

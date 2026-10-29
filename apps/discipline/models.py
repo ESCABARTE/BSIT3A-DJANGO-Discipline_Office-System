@@ -7,6 +7,8 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 
+from .storage import PrivateEvidenceStorage
+
 
 class LegacyStudent(models.Model):
     """Read-only mapping to the existing tblstudents table; migrations never manage it."""
@@ -85,6 +87,50 @@ class OffenseCategory(models.Model):
         return self.name
 
 
+class Violation(models.Model):
+    class Classification(models.TextChoices):
+        MINOR = 'minor', 'Minor'
+        MAJOR = 'major', 'Major'
+        GRAVE = 'grave', 'Grave'
+
+    class Severity(models.TextChoices):
+        LOW = 'low', 'Low'
+        MODERATE = 'moderate', 'Moderate'
+        HIGH = 'high', 'High'
+        CRITICAL = 'critical', 'Critical'
+
+    code = models.CharField(max_length=32, unique=True)
+    name = models.CharField(max_length=180)
+    description = models.TextField()
+    severity = models.CharField(max_length=12, choices=Severity.choices)
+    classification = models.CharField(max_length=8, choices=Classification.choices, blank=True, default='')
+    applicable_rule = models.CharField(max_length=180, blank=True)
+    recommended_penalty = models.TextField(blank=True)
+    policy_reference = models.CharField(max_length=160, blank=True)
+    active = models.BooleanField(default=True)
+    category = models.ForeignKey(OffenseCategory, on_delete=models.PROTECT, related_name='violations')
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='violations_created')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['code']
+
+    def __str__(self):
+        return f'{self.code} — {self.name}'
+
+
+class ViolationAuditLog(models.Model):
+    violation = models.ForeignKey(Violation, on_delete=models.PROTECT, related_name='audit_logs')
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='violation_audit_logs')
+    action = models.CharField(max_length=40)
+    details = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+
+
 class DisciplinaryCase(models.Model):
     class Status(models.TextChoices):
         SUBMITTED = 'submitted', 'Submitted'
@@ -116,6 +162,7 @@ class DisciplinaryCase(models.Model):
     reference = models.CharField(max_length=32, unique=True, editable=False)
     source_type = models.CharField(max_length=20, choices=[('complaint', 'Student complaint'), ('incident', 'Official incident report')])
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.SUBMITTED, db_index=True)
+    academic_year = models.CharField(max_length=40, blank=True)
     finding = models.CharField(max_length=20, choices=Finding.choices, default=Finding.NOT_DETERMINED)
     policy_version = models.CharField(max_length=80, default='Pending school approval')
     opened_at = models.DateTimeField(default=timezone.now, db_index=True)
@@ -123,6 +170,8 @@ class DisciplinaryCase(models.Model):
     assigned_officer = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='discipline_cases_assigned')
     classification_reviewed = models.BooleanField(default=False)
     offense_category = models.ForeignKey(OffenseCategory, null=True, blank=True, on_delete=models.PROTECT, related_name='cases')
+    violation = models.ForeignKey(Violation, null=True, blank=True, on_delete=models.PROTECT, related_name='cases')
+    violations = models.ManyToManyField(Violation, blank=True, related_name='linked_cases')
     offense_description = models.TextField(blank=True)
     recommendation = models.TextField(blank=True)
     final_sanction = models.CharField(max_length=20, choices=Sanction.choices, default=Sanction.NONE)
@@ -141,12 +190,126 @@ class DisciplinaryCase(models.Model):
         return self.reference
 
 
+class PenaltyCatalog(models.Model):
+    name = models.CharField(max_length=160)
+    description = models.TextField(blank=True)
+    duration_days = models.PositiveSmallIntegerField(null=True, blank=True)
+    policy_reference = models.CharField(max_length=160, blank=True)
+    violation = models.ForeignKey(Violation, on_delete=models.PROTECT, related_name='penalties')
+    active = models.BooleanField(default=True)
+    approved = models.BooleanField(default=False)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='penalties_created')
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
+        related_name='penalties_approved',
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        constraints = [
+            models.UniqueConstraint(fields=('name', 'violation'), name='unique_penalty_for_violation'),
+        ]
+
+    def clean(self):
+        if self.approved and (not self.approved_by_id or not self.approved_at):
+            raise ValidationError('An approved penalty must include its approving authority and timestamp.')
+
+    def __str__(self):
+        return f'{self.name} — {self.violation.code}'
+
+
+class PenaltyAuditLog(models.Model):
+    penalty = models.ForeignKey(PenaltyCatalog, on_delete=models.PROTECT, related_name='audit_logs')
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='penalty_audit_logs')
+    action = models.CharField(max_length=40)
+    details = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+
+
+class DisciplinarySanction(models.Model):
+    class ReviewStatus(models.TextChoices):
+        PENDING = 'pending', 'Pending authorized review'
+        APPROVED = 'approved', 'Approved'
+        REJECTED = 'rejected', 'Rejected'
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        IN_PROGRESS = 'in_progress', 'In Progress'
+        COMPLETED = 'completed', 'Completed'
+        OVERDUE = 'overdue', 'Overdue'
+        CANCELLED = 'cancelled', 'Cancelled'
+
+    case = models.ForeignKey('DisciplinaryCase', on_delete=models.PROTECT, related_name='sanctions')
+    violation = models.ForeignKey(Violation, on_delete=models.PROTECT, related_name='sanctions')
+    penalty = models.ForeignKey(
+        PenaltyCatalog, null=True, blank=True, on_delete=models.PROTECT, related_name='assignments',
+    )
+    name = models.CharField(max_length=160)
+    description = models.TextField(blank=True)
+    duration_days = models.PositiveSmallIntegerField(null=True, blank=True)
+    assigned_date = models.DateField(default=timezone.localdate)
+    due_date = models.DateField(null=True, blank=True)
+    responsible_staff = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='disciplinary_sanctions_assigned',
+    )
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='disciplinary_sanctions_created',
+    )
+    review_status = models.CharField(max_length=12, choices=ReviewStatus.choices, default=ReviewStatus.PENDING)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
+        related_name='disciplinary_sanctions_reviewed',
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_notes = models.TextField(blank=True)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-assigned_date', '-id']
+
+    def clean(self):
+        if self.due_date and self.due_date < self.assigned_date:
+            raise ValidationError({'due_date': 'The due date cannot be before the assigned date.'})
+        if self.case_id and self.violation_id and self.case.violation_id and self.case.violation_id != self.violation_id:
+            raise ValidationError({'violation': 'The sanction violation must match the case violation.'})
+        if self.penalty_id and self.violation_id and self.penalty.violation_id != self.violation_id:
+            raise ValidationError({'penalty': 'The approved penalty must match the selected violation.'})
+        if self.review_status == self.ReviewStatus.APPROVED and not self.reviewed_by_id:
+            raise ValidationError({'reviewed_by': 'An authorized reviewer is required to approve a sanction.'})
+        if self.status == self.Status.COMPLETED and not self.completed_at:
+            raise ValidationError({'completed_at': 'Record when the sanction was completed.'})
+
+    @property
+    def effective_status(self):
+        if (
+            self.review_status == self.ReviewStatus.APPROVED
+            and self.status in (self.Status.PENDING, self.Status.IN_PROGRESS)
+            and self.due_date and self.due_date < timezone.localdate()
+        ):
+            return self.Status.OVERDUE
+        return self.status
+
+    @property
+    def effective_status_display(self):
+        return self.Status(self.effective_status).label
+
+
 class CaseReport(models.Model):
     class ReportType(models.TextChoices):
         COMPLAINT = 'complaint', 'Student complaint'
         INCIDENT = 'incident', 'Official incident report'
 
     case = models.OneToOneField(DisciplinaryCase, on_delete=models.CASCADE, related_name='report')
+    submission_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     report_type = models.CharField(max_length=20, choices=ReportType.choices)
     submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='discipline_reports_submitted')
     complainant_name = models.CharField(max_length=180, blank=True)
@@ -200,7 +363,7 @@ class CasePerson(models.Model):
 class CaseDocument(models.Model):
     case = models.ForeignKey(DisciplinaryCase, on_delete=models.CASCADE, related_name='documents')
     document_type = models.CharField(max_length=40, choices=[('evidence', 'Evidence'), ('summons', 'Summons'), ('answer', 'Respondent answer'), ('decision', 'Decision'), ('minutes', 'Committee minutes'), ('other', 'Other')])
-    file = models.FileField(upload_to='discipline/restricted/')
+    file = models.FileField(upload_to='discipline/restricted/', storage=PrivateEvidenceStorage())
     original_name = models.CharField(max_length=255)
     uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     uploaded_at = models.DateTimeField(auto_now_add=True)

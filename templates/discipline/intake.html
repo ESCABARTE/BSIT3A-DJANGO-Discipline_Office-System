@@ -133,7 +133,7 @@
     <div>
       <strong>Privacy &amp; accuracy notice:</strong> Only submit information you are authorised
       to share. All submissions are reviewed by authorised personnel before any action is taken.
-      Contact the Discipline Office for instructions on attaching signed documents or evidence.
+      Evidence submitted here is restricted to authorised case personnel.
     </div>
   </div>
 
@@ -149,6 +149,7 @@
     aria-label="Discipline Office intake form"
   >
     {% csrf_token %}
+    {% if form.submission_token %}{{ form.submission_token }}{% endif %}
     <div id="section-form">
       <section class="intake-section mb-4" aria-labelledby="step-type-heading">
         <h2 class="intake-section-title" id="step-type-heading">
@@ -372,10 +373,35 @@
         </div>
       </section>
 
-      {# ── Step 5 — Witnesses and evidence ──────────────────── #}
+      {# ── Step 5 — Initial violation identification ───────── #}
+      <section class="intake-section mb-4" aria-labelledby="step-violation-heading">
+        <h2 class="intake-section-title" id="step-violation-heading">
+          <span class="intake-step-badge">5</span> Violation identification
+        </h2>
+        <div class="card">
+          <div class="card-body">
+            {% if can_identify_violations %}
+              <label class="form-label" for="id_violations">Reported violation(s), if known</label>
+              {{ form.violations }}
+              {% for e in form.violations.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+              <div class="form-hint">
+                Select only possible violations to guide authorized review. This records an allegation,
+                not a finding of responsibility; staff may identify or update violations during case review.
+              </div>
+            {% else %}
+              <p class="mb-0 text-secondary">
+                Violation identification is completed by authorized Discipline Office personnel during review.
+                Submitting this report does not determine responsibility.
+              </p>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
+      {# ── Step 6 — Witnesses and evidence ──────────────────── #}
       <section class="intake-section mb-4" aria-labelledby="step-witness-heading">
         <h2 class="intake-section-title" id="step-witness-heading">
-          <span class="intake-step-badge">5</span> Witnesses &amp; supporting information
+          <span class="intake-step-badge">6</span> Witnesses &amp; supporting information
           <span class="text-secondary fs-6 fw-normal ms-2">(optional)</span>
         </h2>
         <div class="card">
@@ -391,6 +417,12 @@
                 {% endif %}
                 <div class="form-hint">Names or descriptions of any witnesses. Do not include confidential third-party information without authorisation.</div>
               </div>
+              <div class="col-12">
+                <label class="form-label" for="id_evidence">Supporting evidence</label>
+                {{ form.evidence }}
+                {% for e in form.evidence.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+                <div class="form-hint">{{ form.evidence.help_text }}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -399,7 +431,7 @@
       {# ── Step 6 — Acknowledgment & submission ─────────────── #}
       <section class="intake-section mb-4" aria-labelledby="step-submit-heading">
         <h2 class="intake-section-title" id="step-submit-heading">
-          <span class="intake-step-badge">6</span> Review &amp; submit
+          <span class="intake-step-badge">7</span> Review &amp; submit
         </h2>
         <div class="card">
           <div class="card-body">

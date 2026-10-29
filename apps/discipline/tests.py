@@ -1,23 +1,31 @@
-from datetime import date
+from datetime import date, timedelta
+import uuid
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from .forms import WorkflowActionForm
 from .models import (
     CaseAction,
     CaseAuditLog,
+    CaseDocument,
     CaseReport,
     CommitteeMember,
     DisciplinaryCase,
     DisciplinaryCommittee,
+    DisciplinarySanction,
     KnightsMember,
     KnightsObservation,
     OffenseCategory,
+    PenaltyCatalog,
+    ViolationAuditLog,
     SchoolCalendarDay,
     Summons,
+    Violation,
     add_school_days,
 )
 from .permissions import can_decide, can_finalize_decision, is_discipline_officer, require_decision_authority
@@ -332,3 +340,271 @@ class DisciplineAccessAndWorkflowTests(TestCase):
         self.assertEqual(observation.status, KnightsObservation.Status.SUBMITTED)
         response = self.client.post(reverse('discipline:knights_observation_review', args=[observation.pk]), {'action': 'referred'})
         self.assertEqual(response.status_code, 403)
+
+
+class ViolationAndPenaltyTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.admin = user_model.objects.create_superuser(username='final-authority', password='strong-test-pass')
+        self.officer = user_model.objects.create_user(username='discipline-officer', password='strong-test-pass')
+        self.student = user_model.objects.create_user(username='student-user', password='strong-test-pass')
+        committee = DisciplinaryCommittee.objects.create(academic_year='2026-2027')
+        CommitteeMember.objects.create(
+            committee=committee,
+            user=self.officer,
+            role=CommitteeMember.Role.DISCIPLINE_OFFICER,
+        )
+        self.category = OffenseCategory.objects.create(name='Student Conduct')
+
+    def create_violation(self):
+        return Violation.objects.create(
+            code='VC-001',
+            name='School conduct violation',
+            description='Test violation record.',
+            severity=Violation.Severity.HIGH,
+            classification=Violation.Classification.MAJOR,
+            applicable_rule='Student Handbook Rule 1',
+            recommended_penalty='Counseling referral when approved.',
+            category=self.category,
+            created_by=self.officer,
+        )
+
+    def create_case(self, violation):
+        case = DisciplinaryCase.objects.create(
+            source_type=CaseReport.ReportType.INCIDENT,
+            assigned_officer=self.officer,
+            offense_category=self.category,
+            violation=violation,
+            finding=DisciplinaryCase.Finding.SUBSTANTIATED,
+        )
+        CaseReport.objects.create(
+            case=case,
+            report_type=CaseReport.ReportType.INCIDENT,
+            submitted_by=self.officer,
+            respondent_name='Test Student',
+            respondent_student_id='S-200',
+            reporting_position='Discipline Officer',
+            narration='Incident submitted for authorized review.',
+            acknowledgment=True,
+        )
+        return case
+
+    def test_intake_links_allegations_without_finding_and_deduplicates_reposts(self):
+        violation = self.create_violation()
+        token = str(uuid.uuid4())
+        payload = {
+            'report_type': CaseReport.ReportType.INCIDENT,
+            'submission_token': token,
+            'reporting_position': 'Discipline Officer',
+            'respondent_name': 'Test Student',
+            'respondent_student_id': 'S-200',
+            'narration': 'Incident submitted for review.',
+            'acknowledgment': 'on',
+            'violations': [str(violation.pk)],
+        }
+        self.client.force_login(self.officer)
+        first = self.client.post(reverse('discipline:intake'), payload)
+        self.assertEqual(first.status_code, 302)
+        case = DisciplinaryCase.objects.get()
+        self.assertEqual(case.finding, DisciplinaryCase.Finding.NOT_DETERMINED)
+        self.assertEqual(list(case.violations.all()), [violation])
+        self.assertTrue(CaseAuditLog.objects.filter(case=case, action='violation_reported').exists())
+
+        duplicate = self.client.post(reverse('discipline:intake'), payload)
+        self.assertEqual(duplicate.status_code, 302)
+        self.assertEqual(DisciplinaryCase.objects.count(), 1)
+
+    def test_multiple_case_violations_filter_authorized_penalty_assignment(self):
+        first_violation = self.create_violation()
+        second_violation = Violation.objects.create(
+            code='VC-002',
+            name='Second conduct violation',
+            description='Another test violation.',
+            severity=Violation.Severity.MODERATE,
+            classification=Violation.Classification.MINOR,
+            applicable_rule='Student Handbook Rule 2',
+            category=self.category,
+            created_by=self.officer,
+        )
+        case = self.create_case(first_violation)
+        self.client.force_login(self.officer)
+        linked = self.client.post(reverse('discipline:case_violation_assign', args=[case.pk]), {
+            'violations': [str(first_violation.pk), str(second_violation.pk)],
+        })
+        self.assertEqual(linked.status_code, 302)
+        case.refresh_from_db()
+        self.assertEqual(set(case.violations.all()), {first_violation, second_violation})
+
+        case.finding = DisciplinaryCase.Finding.SUBSTANTIATED
+        case.save(update_fields=['finding'])
+        penalty = PenaltyCatalog.objects.create(
+            name='Counseling for second violation',
+            description='Attend counseling.',
+            violation=second_violation,
+            policy_reference='KCC-DO-02',
+            active=True,
+            approved=True,
+            created_by=self.officer,
+            approved_by=self.admin,
+            approved_at=timezone.now(),
+        )
+        response = self.client.post(
+            reverse('discipline:sanction_assign_for_violation', args=[case.pk, second_violation.pk]),
+            {
+                'penalty': penalty.pk,
+                'assigned_date': date.today().isoformat(),
+                'due_date': '',
+                'responsible_staff': self.officer.pk,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        sanction = DisciplinarySanction.objects.get(case=case)
+        self.assertEqual(sanction.violation, second_violation)
+        self.assertEqual(sanction.review_status, DisciplinarySanction.ReviewStatus.PENDING)
+        self.assertEqual(sanction.status, DisciplinarySanction.Status.PENDING)
+
+    def test_uploaded_evidence_is_private_and_requires_case_authority(self):
+        token = str(uuid.uuid4())
+        self.client.force_login(self.student)
+        response = self.client.post(reverse('discipline:intake'), {
+            'report_type': CaseReport.ReportType.COMPLAINT,
+            'submission_token': token,
+            'complainant_name': 'Student Reporter',
+            'complainant_student_id': 'S-100',
+            'respondent_name': 'Test Student',
+            'respondent_student_id': 'S-200',
+            'narration': 'Incident submitted for review.',
+            'acknowledgment': 'on',
+            'evidence': SimpleUploadedFile('evidence.pdf', b'%PDF-1.4 private evidence'),
+        })
+        self.assertEqual(response.status_code, 302)
+        case = DisciplinaryCase.objects.get()
+        document = CaseDocument.objects.get(case=case)
+        self.addCleanup(document.file.delete, save=False)
+        self.assertIn('private-evidence', document.file.path)
+        download_url = reverse('discipline:case_document_download', args=[case.pk, document.pk])
+
+        self.assertEqual(self.client.get(download_url).status_code, 403)
+        self.client.force_login(self.officer)
+        download = self.client.get(download_url)
+        self.assertEqual(download.status_code, 200)
+        self.assertEqual(b''.join(download.streaming_content), b'%PDF-1.4 private evidence')
+        self.assertEqual(self.client.get(f'/media/{document.file.name}').status_code, 404)
+
+    def test_confidential_student_history_shows_linked_violations_and_penalties(self):
+        violation = self.create_violation()
+        case = self.create_case(violation)
+        DisciplinarySanction.objects.create(
+            case=case,
+            violation=violation,
+            name='Counseling referral',
+            description='Attend counseling.',
+            responsible_staff=self.officer,
+            assigned_by=self.officer,
+        )
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse('discipline:confidential_profile'), {'student_id': 'S-200'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'VC-001 · School conduct violation')
+        self.assertContains(response, 'Counseling referral · Pending authorized review')
+
+    def test_violation_catalog_is_searchable_and_officer_managed(self):
+        self.client.force_login(self.student)
+        self.assertEqual(self.client.get(reverse('discipline:violation_list')).status_code, 403)
+
+        self.client.force_login(self.officer)
+        response = self.client.post(reverse('discipline:violation_create'), {
+            'code': 'VC-001',
+            'name': 'School conduct violation',
+            'description': 'Test violation record.',
+            'category': self.category.pk,
+            'severity': Violation.Severity.HIGH,
+            'classification': Violation.Classification.MAJOR,
+            'applicable_rule': 'Student Handbook Rule 1',
+            'recommended_penalty': 'Counseling referral when approved.',
+            'policy_reference': 'KCC-DO-01',
+        })
+        self.assertEqual(response.status_code, 302)
+        violation = Violation.objects.get(code='VC-001')
+        self.assertTrue(ViolationAuditLog.objects.filter(violation=violation, action='created').exists())
+        response = self.client.get(reverse('discipline:violation_list'), {'q': 'VC-001'})
+        self.assertContains(response, 'School conduct violation')
+
+        response = self.client.post(reverse('discipline:violation_archive', args=[violation.pk]))
+        self.assertRedirects(response, reverse('discipline:violation_detail', args=[violation.pk]))
+        violation.refresh_from_db()
+        self.assertFalse(violation.active)
+        self.assertTrue(ViolationAuditLog.objects.filter(violation=violation, action='archived').exists())
+
+    def test_penalty_requires_approval_and_substantiated_case_before_assignment(self):
+        violation = self.create_violation()
+        case = self.create_case(violation)
+        assigned_date = date.today()
+        due_date = assigned_date + timedelta(days=7)
+        self.client.force_login(self.officer)
+        response = self.client.post(reverse('discipline:penalty_create'), {
+            'name': 'Counseling referral',
+            'description': 'Attend an approved counseling session.',
+            'violation': violation.pk,
+            'duration_days': '',
+            'policy_reference': 'KCC-DO-01',
+        })
+        self.assertEqual(response.status_code, 302)
+        penalty = PenaltyCatalog.objects.get(name='Counseling referral')
+        self.assertFalse(penalty.approved)
+        self.assertEqual(
+            self.client.post(reverse('discipline:sanction_assign', args=[case.pk]), {
+                'penalty': penalty.pk,
+                'assigned_date': assigned_date.isoformat(),
+                'due_date': due_date.isoformat(),
+                'responsible_staff': self.officer.pk,
+            }).status_code,
+            200,
+        )
+        self.assertFalse(DisciplinarySanction.objects.exists())
+
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse('discipline:penalty_approve', args=[penalty.pk]), {
+            'policy_basis': 'Approved under KCC-DO-01.',
+        })
+        self.assertRedirects(response, reverse('discipline:sanction_list'))
+        penalty.refresh_from_db()
+        self.assertTrue(penalty.approved)
+        self.assertEqual(penalty.approved_by, self.admin)
+
+        self.client.force_login(self.officer)
+        response = self.client.post(reverse('discipline:sanction_assign', args=[case.pk]), {
+            'penalty': penalty.pk,
+            'assigned_date': assigned_date.isoformat(),
+            'due_date': due_date.isoformat(),
+            'responsible_staff': self.officer.pk,
+        })
+        self.assertRedirects(response, reverse('discipline:case_detail', args=[case.pk]))
+        sanction = DisciplinarySanction.objects.get(case=case)
+        self.assertEqual(sanction.review_status, DisciplinarySanction.ReviewStatus.PENDING)
+
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse('discipline:sanction_review', args=[sanction.pk]), {
+            'decision': 'approve',
+            'review_notes': 'Approved under KCC-DO-01.',
+        })
+        self.assertRedirects(response, reverse('discipline:case_detail', args=[case.pk]))
+        sanction.refresh_from_db()
+        self.assertEqual(sanction.review_status, DisciplinarySanction.ReviewStatus.APPROVED)
+
+        self.client.force_login(self.officer)
+        response = self.client.post(reverse('discipline:sanction_status_update', args=[sanction.pk]), {
+            'status': DisciplinarySanction.Status.IN_PROGRESS,
+        })
+        self.assertRedirects(response, reverse('discipline:sanction_list'))
+        sanction.refresh_from_db()
+        self.assertEqual(sanction.status, DisciplinarySanction.Status.IN_PROGRESS)
+        self.assertEqual(self.client.get(reverse('discipline:sanction_list')).status_code, 200)
+        sanction.due_date = assigned_date - timedelta(days=1)
+        sanction.save(update_fields=('due_date', 'updated_at'))
+        self.assertEqual(sanction.effective_status, DisciplinarySanction.Status.OVERDUE)
+        self.assertContains(
+            self.client.get(reverse('discipline:sanction_list'), {'status': 'overdue'}),
+            'Counseling referral',
+        )
+        self.assertContains(self.client.get(reverse('discipline:case_detail', args=[case.pk])), 'Counseling referral')
