@@ -323,6 +323,14 @@ def case_detail(request, pk):
         DisciplinaryCase.Status.APPEAL,
         DisciplinaryCase.Status.DECISION_RECORDED,
     )
+    # Pre-build decision form so modals can render field choices inline
+    decision_form = None
+    if can_finalize_decision(request.user) and decision_eligible:
+        decision_form = CaseDecisionForm(
+            case=case,
+            user=request.user,
+            initial={'authority_position': _user_position(request.user)},
+        )
 
     return render(request, 'discipline/case_detail.html', {
         **_navigation_context(request),
@@ -334,7 +342,7 @@ def case_detail(request, pk):
             action_type=CaseAction.ActionType.DECISION,
         ).select_related('actor'),
         'summons_history': case.audit_logs.filter(action__startswith='summons_').select_related('actor'),
-        'status_history': case.actions.filter(action_type=CaseAction.ActionType.STATUS).select_related('actor'),
+        'status_history': case.actions.filter(action_type=CaseAction.ActionType.STATUS).select_related('actor').order_by('-created_at'),
         'classification_history': case.audit_logs.filter(action='classification_recorded').select_related('actor'),
         'case_documents': case.documents.all() if can_view_confidential else (),
         'visible_summonses': visible_summonses,
@@ -344,6 +352,8 @@ def case_detail(request, pk):
         'can_finalize_decision': can_finalize_decision(request.user),
         'decision_eligible': decision_eligible,
         'status_transition_available': bool(status_form.fields['status'].choices),
+        'status_update_form': status_form,
+        'decision_form': decision_form,
         'has_respondent': case.people.filter(role=CasePerson.Role.RESPONDENT).exists(),
         'summons_approval_form': SummonsApprovalForm(user=request.user) if can_finalize_decision(request.user) else None,
         'can_decide': can_decide(request.user),

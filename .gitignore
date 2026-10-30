@@ -1,0 +1,46 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Django
+db.sqlite3
+db_backup.sqlite3
+*.sqlite3
+/media/
+/staticfiles/
+local_settings.py
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE / editor
+.vscode/
+.idea/
+Kiro/
+*.suo
+*.user
+
+# Logs
+*.log
+
+# Misc uploaded files in project root
+847181213_1106767645064279_5565143206848684820_n.jpg
+
+# Temp files created during development
+git_status.txt
+run_check_output.txt
+compile_out.txt
+check_out.txt
+verify_out.txt
+seed_out.txt
+tmpl_out.txt
+chk.txt

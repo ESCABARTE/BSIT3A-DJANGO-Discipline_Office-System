@@ -43,7 +43,7 @@
           <a class="nav-link {% if request.resolver_match.app_name == 'users' %}active{% endif %}"
              href="{% url 'users:user_list' %}">
             <span class="nav-link-icon"><i class="fas fa-users" aria-hidden="true"></i></span>
-            <span class="nav-link-title">Manage Staff</span>
+            <span class="nav-link-title">Manage Staff Accounts</span>
           </a>
         </li>
         {% endif %}
@@ -71,7 +71,7 @@
                 <a class="nav-link {% if route == 'dashboard' and request.resolver_match.app_name == 'discipline' or route == 'case_detail' or route == 'case_action' or route == 'case_classify' or route == 'case_receive' or route == 'case_status_update' or route == 'case_decision' or route == 'stage_create' or route == 'summons_create' or route == 'summons_edit' or route == 'summons_approve' or route == 'summons_preview' or route == 'summons_print' or route == 'summons_receipt_print' or route == 'summons_serve' or route == 'summons_extension' or route == 'answer_submit' or route == 'case_document_download' %}active{% endif %}"
                    href="{% url 'discipline:dashboard' %}">
                   <span class="nav-link-icon"><i class="fas fa-gavel" aria-hidden="true"></i></span>
-                  <span class="nav-link-title">Discipline Cases</span>
+            <span class="nav-link-title">Active Cases</span>
                 </a>
               </li>
               {% endif %}
@@ -79,14 +79,14 @@
                 <a class="nav-link {% if route == 'case_list' or route == 'case_detail' and not is_authorized_official %}active{% endif %}"
                    href="{% url 'discipline:case_list' %}">
                   <span class="nav-link-icon"><i class="fas fa-folder-open" aria-hidden="true"></i></span>
-                  <span class="nav-link-title">Case Register</span>
+                  <span class="nav-link-title">All Cases</span>
                 </a>
               </li>
               <li class="nav-item">
                 <a class="nav-link {% if route == 'intake' or route == 'intake_success' %}active{% endif %}"
                    href="{% url 'discipline:intake' %}">
                   <span class="nav-link-icon"><i class="fas fa-clipboard-list" aria-hidden="true"></i></span>
-                  <span class="nav-link-title">Discipline Office Intake</span>
+                  <span class="nav-link-title">Submit a Report</span>
                 </a>
               </li>
               {% if is_authorized_official %}
@@ -94,7 +94,7 @@
                 <a class="nav-link {% if route == 'incident_log' %}active{% endif %}"
                    href="{% url 'discipline:incident_log' %}">
                   <span class="nav-link-icon"><i class="fas fa-list-check" aria-hidden="true"></i></span>
-                  <span class="nav-link-title">Incident Log</span>
+                  <span class="nav-link-title">Submitted Reports Log</span>
                 </a>
               </li>
               {% endif %}
@@ -118,7 +118,7 @@
              href="#policy-menu"
              role="button">
             <span class="nav-link-icon"><i class="fas fa-book" aria-hidden="true"></i></span>
-            <span class="nav-link-title">Campus Rules &amp; Policy</span>
+            <span class="nav-link-title">Rules &amp; Policies</span>
             <span class="nav-link-caret ms-auto"><i class="fas fa-chevron-down" aria-hidden="true"></i></span>
           </a>
           <div class="collapse {% if route == 'policy_list' or route == 'policy_create' or route == 'policy_detail' or route == 'policy_edit' or route == 'policy_log' %}show{% endif %}" id="policy-menu">
@@ -127,7 +127,7 @@
                 <a class="nav-link {% if route == 'policy_list' or route == 'policy_detail' or route == 'policy_create' or route == 'policy_edit' %}active{% endif %}"
                    href="{% url 'discipline:policy_list' %}">
                   <span class="nav-link-icon"><i class="fas fa-book-open" aria-hidden="true"></i></span>
-                  <span class="nav-link-title">Policy Records</span>
+                  <span class="nav-link-title">Policy Catalog</span>
                 </a>
               </li>
               {% if user.is_superuser %}
@@ -135,7 +135,7 @@
                 <a class="nav-link {% if route == 'policy_create' %}active{% endif %}"
                    href="{% url 'discipline:policy_create' %}">
                   <span class="nav-link-icon"><i class="fas fa-plus" aria-hidden="true"></i></span>
-                  <span class="nav-link-title">Add Policy</span>
+                  <span class="nav-link-title">Add New Policy</span>
                 </a>
               </li>
               {% endif %}
@@ -143,7 +143,7 @@
                 <a class="nav-link {% if route == 'policy_log' %}active{% endif %}"
                    href="{% url 'discipline:policy_log' %}">
                   <span class="nav-link-icon"><i class="fas fa-clock-rotate-left" aria-hidden="true"></i></span>
-                  <span class="nav-link-title">Policy Log</span>
+                  <span class="nav-link-title">Policy Change History</span>
                 </a>
               </li>
             </ul>
