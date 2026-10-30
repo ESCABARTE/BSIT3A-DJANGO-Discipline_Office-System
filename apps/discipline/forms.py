@@ -21,6 +21,16 @@ from .models import (
 from .permissions import is_official
 
 
+def _designation_choices(user):
+    if user is None:
+        return [('Admin', 'Admin'), ('Staff', 'Staff')]
+    if user.is_superuser:
+        return [('Admin', 'Admin')]
+    if is_official(user):
+        return [('Staff', 'Staff')]
+    return []
+
+
 def _final_authority_positions(user):
     if user.is_superuser:
         return [('System administrator', 'System administrator')]
@@ -48,13 +58,24 @@ class ReportForm(forms.ModelForm):
         choices=(('', 'Select reporting method'), ('in_person', 'In person'), ('written', 'Written'), ('online', 'Online'), ('other', 'Other')),
     )
     classification = forms.ChoiceField(required=False, choices=(('', 'Select preliminary classification'), *DisciplinaryCase.Classification.choices))
+    case_level = forms.ChoiceField(
+        required=False,
+        choices=(('', 'Select Case Level'), *DisciplinaryCase.CaseLevel.choices),
+        label='Case Level',
+    )
     offense_category = forms.ModelChoiceField(
         required=False,
         queryset=OffenseCategory.objects.filter(active=True).order_by('name'),
         label='Related policy',
     )
-    classification_basis = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 3}))
-    classification_remarks = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2}))
+    classification_factual_basis = forms.CharField(
+        required=False,
+        label='Classification and Factual Basis',
+        widget=forms.Textarea(attrs={
+            'rows': 4,
+            'placeholder': 'Explain the circumstances and factual basis supporting this classification.',
+        }),
+    )
 
     class Meta:
         model = CaseReport
@@ -93,8 +114,9 @@ class ReportForm(forms.ModelForm):
             self.fields['reporting_position'].required = True
             for name in ('complainant_name', 'complainant_student_id', 'complainant_program', 'complainant_year_section', 'complainant_relationship', 'complainant_contact'):
                 self.fields[name].widget = forms.HiddenInput()
+            self.fields['case_level'].required = True
         if not is_official(user):
-            for name in ('classification', 'offense_category', 'classification_basis', 'classification_remarks'):
+            for name in ('classification', 'offense_category', 'classification_factual_basis'):
                 self.fields.pop(name)
         self.fields['evidence'].help_text = 'Optional; PDF, JPG, or PNG, up to 10 MB. Accessible only to authorized case personnel.'
         self.fields['evidence'].widget.attrs.update({'class': 'form-control', 'accept': '.pdf,.jpg,.jpeg,.png'})
@@ -108,8 +130,11 @@ class ReportForm(forms.ModelForm):
                 self.add_error('classification', 'Choose a preliminary classification when selecting a policy.')
             if not policy:
                 self.add_error('offense_category', 'Select the applicable active policy for this classification.')
-            if not cleaned.get('classification_basis', '').strip():
-                self.add_error('classification_basis', 'Record the factual basis for the preliminary classification.')
+            if not cleaned.get('classification_factual_basis', '').strip():
+                self.add_error(
+                    'classification_factual_basis',
+                    'Record the factual basis for the preliminary classification.',
+                )
         return cleaned
 
     def clean_evidence(self):
@@ -141,6 +166,12 @@ class ReportForm(forms.ModelForm):
 
 
 class WorkflowActionForm(forms.ModelForm):
+    actor_position = forms.ChoiceField(
+        required=False,
+        label='Position / Designation',
+        widget=forms.Select(attrs={'class': 'form-select'}),
+    )
+
     class Meta:
         model = CaseAction
         fields = ('action_type', 'finding', 'recommendation', 'details')
@@ -149,8 +180,10 @@ class WorkflowActionForm(forms.ModelForm):
             'details': forms.Textarea(attrs={'rows': 3}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['actor_position'].choices = [('', '— Select position —'), *_designation_choices(user)]
+        self.default_position = next(iter(_designation_choices(user)), ('', ''))[0]
         self.fields['action_type'].choices = [
             (value, label)
             for value, label in self.fields['action_type'].choices
@@ -158,8 +191,17 @@ class WorkflowActionForm(forms.ModelForm):
                 CaseAction.ActionType.STATUS,
                 CaseAction.ActionType.SANCTION,
                 CaseAction.ActionType.DECISION,
+                CaseAction.ActionType.REVIEW,
             )
         ]
+        for field in self.fields.values():
+            if hasattr(field.widget, 'attrs'):
+                existing = field.widget.attrs.get('class', '')
+                if 'form-control' not in existing and 'form-select' not in existing:
+                    if isinstance(field.widget, forms.Select):
+                        field.widget.attrs['class'] = 'form-select'
+                    elif not isinstance(field.widget, (forms.CheckboxInput, forms.HiddenInput)):
+                        field.widget.attrs['class'] = 'form-control'
 
     def clean(self):
         cleaned = super().clean()
@@ -170,7 +212,88 @@ class WorkflowActionForm(forms.ModelForm):
             cleaned['recommendation'] = ''
         if action_type == CaseAction.ActionType.FINDING and not cleaned.get('finding'):
             self.add_error('finding', 'Choose the finding established by the authorized review.')
+        if not cleaned.get('actor_position'):
+            if self.default_position:
+                cleaned['actor_position'] = self.default_position
+            else:
+                self.add_error('actor_position', 'Select your position / designation.')
         return cleaned
+
+
+class ReviewCaseForm(forms.Form):
+    RECOMMENDATION_CHOICES = (
+        ('proceed_investigation', 'Proceed for Investigation'),
+        ('return_for_completion', 'Return for Completion'),
+        ('refer_to_office', 'Refer to Appropriate Office'),
+        ('request_information', 'Request Additional Information'),
+    )
+
+    information_findings = forms.CharField(
+        label='Review findings',
+        widget=forms.Textarea(attrs={'rows': 3}),
+    )
+    document_verification = forms.CharField(
+        label='Supporting document verification remarks',
+        required=False,
+        widget=forms.Textarea(attrs={'rows': 3}),
+    )
+    recommended_classification = forms.ChoiceField(
+        label='Recommended classification',
+        required=False,
+        choices=(('', 'No classification recommendation'), *DisciplinaryCase.Classification.choices),
+    )
+    recommendation = forms.ChoiceField(
+        label='Review recommendation',
+        choices=(('', 'Select a recommendation'), *RECOMMENDATION_CHOICES),
+    )
+    review_remarks = forms.CharField(
+        label='Review remarks',
+        widget=forms.Textarea(attrs={'rows': 4}),
+    )
+    actor_position = forms.ChoiceField(required=False)
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        positions = _designation_choices(user)
+        self.fields['actor_position'] = forms.ChoiceField(
+            label='Position / Designation',
+            required=False,
+            choices=[('', '— Select position —'), *positions],
+            widget=forms.Select(attrs={'class': 'form-select'}),
+        )
+        self.default_position = next(iter(positions), ('', ''))[0]
+        for field in self.fields.values():
+            if isinstance(field.widget, forms.Select):
+                field.widget.attrs.setdefault('class', 'form-select')
+            elif not isinstance(field.widget, forms.HiddenInput):
+                field.widget.attrs.setdefault('class', 'form-control')
+
+    def clean(self):
+        cleaned = super().clean()
+        if not cleaned.get('actor_position') and self.default_position:
+            cleaned['actor_position'] = self.default_position
+        if not cleaned.get('actor_position'):
+            self.add_error('actor_position', 'Select your position / designation.')
+        if cleaned.get('recommendation'):
+            remarks = cleaned.get('review_remarks', '').strip()
+            if len(remarks) < 20:
+                self.add_error(
+                    'review_remarks',
+                    'Provide at least 20 characters explaining the review recommendation.',
+                )
+        return cleaned
+
+
+class CaseLevelForm(forms.ModelForm):
+    class Meta:
+        model = DisciplinaryCase
+        fields = ('case_level',)
+        labels = {'case_level': 'Case Level'}
+        widgets = {'case_level': forms.Select(attrs={'class': 'form-select'})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['case_level'].required = True
 
 
 class OffenseCategoryForm(forms.ModelForm):
@@ -252,15 +375,21 @@ class OffenseCategoryForm(forms.ModelForm):
 class CaseClassificationForm(forms.ModelForm):
     change_reason = forms.CharField(
         label='Reason for classification or update',
-        widget=forms.Textarea(attrs={'rows': 2}),
+        widget=forms.Textarea(attrs={'rows': 2, 'class': 'form-control'}),
     )
 
     class Meta:
         model = DisciplinaryCase
-        fields = ('classification', 'offense_category', 'classification_basis', 'classification_remarks')
+        fields = ('classification', 'offense_category', 'classification_factual_basis')
         widgets = {
-            'classification_basis': forms.Textarea(attrs={'rows': 3}),
-            'classification_remarks': forms.Textarea(attrs={'rows': 2}),
+            'classification_factual_basis': forms.Textarea(attrs={
+                'rows': 4,
+                'class': 'form-control',
+                'placeholder': 'Explain the circumstances and factual basis supporting this classification.',
+            }),
+        }
+        labels = {
+            'classification_factual_basis': 'Classification and Factual Basis',
         }
 
     def __init__(self, *args, **kwargs):
@@ -268,81 +397,122 @@ class CaseClassificationForm(forms.ModelForm):
         self.fields['offense_category'].queryset = OffenseCategory.objects.filter(active=True).order_by('name')
         self.fields['classification'].required = True
         self.fields['offense_category'].required = True
-        self.fields['classification_basis'].required = True
+        self.fields['classification_factual_basis'].required = True
         for field in self.fields.values():
             field.widget.attrs.setdefault('class', 'form-select' if isinstance(field.widget, forms.Select) else 'form-control')
 
     def clean(self):
         cleaned = super().clean()
-        if not cleaned.get('classification_basis', '').strip():
-            self.add_error('classification_basis', 'Record the factual basis for the preliminary classification.')
+        if not cleaned.get('classification_factual_basis', '').strip():
+            self.add_error('classification_factual_basis', 'Explain the circumstances and factual basis for this classification.')
         if not cleaned.get('change_reason', '').strip():
             self.add_error('change_reason', 'Explain why the classification is being recorded or changed.')
         return cleaned
 
 
 class CaseStatusForm(forms.Form):
-    status = forms.ChoiceField(label='New status')
-    remarks = forms.CharField(widget=forms.Textarea(attrs={'rows': 3}))
+    status = forms.ChoiceField(label='New Status')
+    actor_position = forms.ChoiceField(
+        label='Position / Designation',
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-select'}),
+    )
+    remarks = forms.CharField(
+        label='Reason for Status Change',
+        widget=forms.Textarea(attrs={
+            'rows': 3,
+            'class': 'form-control',
+            'placeholder': 'Briefly explain why the case status is being updated...',
+        }),
+    )
 
-    def __init__(self, *args, case, **kwargs):
+    ALL_STATUSES = [
+        (DisciplinaryCase.Status.INITIAL_REVIEW,   'Under Initial Review'),
+        (DisciplinaryCase.Status.RETURNED,          'Returned for Completion'),
+        (DisciplinaryCase.Status.INVESTIGATION,     'Accepted for Investigation'),
+        (DisciplinaryCase.Status.HEARING,           'Hearing / Evidence Review'),
+        (DisciplinaryCase.Status.COMMITTEE,         'Awaiting Committee Action'),
+        (DisciplinaryCase.Status.DECISION,          'Awaiting Final Decision'),
+        (DisciplinaryCase.Status.DECISION_RECORDED, 'Decision Recorded'),
+        (DisciplinaryCase.Status.AWAITING_GUARDIAN, 'Awaiting Parent / Guardian Hearing'),
+        (DisciplinaryCase.Status.APPEAL,            'Appeal / Reconsideration'),
+        (DisciplinaryCase.Status.RESOLVED,          'Resolved'),
+        (DisciplinaryCase.Status.CLOSED,            'Closed'),
+        (DisciplinaryCase.Status.REFERRED,          'Referred'),
+    ]
+
+    TRANSITIONS = {
+        DisciplinaryCase.Status.SUBMITTED: (
+            DisciplinaryCase.Status.INITIAL_REVIEW,
+            DisciplinaryCase.Status.RETURNED,
+        ),
+        DisciplinaryCase.Status.INITIAL_REVIEW: (
+            DisciplinaryCase.Status.RETURNED,
+            DisciplinaryCase.Status.INVESTIGATION,
+            DisciplinaryCase.Status.HEARING,
+        ),
+        DisciplinaryCase.Status.RETURNED: (DisciplinaryCase.Status.INITIAL_REVIEW,),
+        DisciplinaryCase.Status.INVESTIGATION: (
+            DisciplinaryCase.Status.HEARING,
+            DisciplinaryCase.Status.COMMITTEE,
+            DisciplinaryCase.Status.DECISION,
+            DisciplinaryCase.Status.REFERRED,
+        ),
+        DisciplinaryCase.Status.HEARING: (
+            DisciplinaryCase.Status.INVESTIGATION,
+            DisciplinaryCase.Status.COMMITTEE,
+            DisciplinaryCase.Status.DECISION,
+            DisciplinaryCase.Status.AWAITING_GUARDIAN,
+        ),
+        DisciplinaryCase.Status.COMMITTEE: (
+            DisciplinaryCase.Status.INVESTIGATION,
+            DisciplinaryCase.Status.DECISION,
+            DisciplinaryCase.Status.AWAITING_GUARDIAN,
+        ),
+        DisciplinaryCase.Status.DECISION: (
+            DisciplinaryCase.Status.AWAITING_GUARDIAN,
+            DisciplinaryCase.Status.DECISION_RECORDED,
+        ),
+        DisciplinaryCase.Status.AWAITING_GUARDIAN: (
+            DisciplinaryCase.Status.HEARING,
+            DisciplinaryCase.Status.DECISION,
+        ),
+        DisciplinaryCase.Status.DECISION_RECORDED: (
+            DisciplinaryCase.Status.APPEAL,
+            DisciplinaryCase.Status.RESOLVED,
+        ),
+        DisciplinaryCase.Status.APPEAL: (
+            DisciplinaryCase.Status.DECISION,
+            DisciplinaryCase.Status.RESOLVED,
+        ),
+        DisciplinaryCase.Status.RESOLVED: (DisciplinaryCase.Status.CLOSED,),
+        DisciplinaryCase.Status.REFERRED: (DisciplinaryCase.Status.INITIAL_REVIEW,),
+    }
+
+    def __init__(self, *args, case, user=None, **kwargs):
+        self.case = case
+        self.user = user
         super().__init__(*args, **kwargs)
-        transitions = {
-            DisciplinaryCase.Status.SUBMITTED: (
-                DisciplinaryCase.Status.INITIAL_REVIEW,
-                DisciplinaryCase.Status.RETURNED,
-            ),
-            DisciplinaryCase.Status.INITIAL_REVIEW: (
-                DisciplinaryCase.Status.RETURNED,
-                DisciplinaryCase.Status.INVESTIGATION,
-                DisciplinaryCase.Status.HEARING,
-            ),
-            DisciplinaryCase.Status.RETURNED: (DisciplinaryCase.Status.INITIAL_REVIEW,),
-            DisciplinaryCase.Status.INVESTIGATION: (
-                DisciplinaryCase.Status.HEARING,
-                DisciplinaryCase.Status.COMMITTEE,
-                DisciplinaryCase.Status.DECISION,
-                DisciplinaryCase.Status.REFERRED,
-            ),
-            DisciplinaryCase.Status.HEARING: (
-                DisciplinaryCase.Status.INVESTIGATION,
-                DisciplinaryCase.Status.COMMITTEE,
-                DisciplinaryCase.Status.DECISION,
-                DisciplinaryCase.Status.AWAITING_GUARDIAN,
-            ),
-            DisciplinaryCase.Status.COMMITTEE: (
-                DisciplinaryCase.Status.INVESTIGATION,
-                DisciplinaryCase.Status.DECISION,
-                DisciplinaryCase.Status.AWAITING_GUARDIAN,
-            ),
-            DisciplinaryCase.Status.DECISION: (
-                DisciplinaryCase.Status.AWAITING_GUARDIAN,
-            ),
-            DisciplinaryCase.Status.AWAITING_GUARDIAN: (
-                DisciplinaryCase.Status.HEARING,
-                DisciplinaryCase.Status.DECISION,
-            ),
-            DisciplinaryCase.Status.DECISION_RECORDED: (
-                DisciplinaryCase.Status.APPEAL,
-                DisciplinaryCase.Status.RESOLVED,
-            ),
-            DisciplinaryCase.Status.APPEAL: (
-                DisciplinaryCase.Status.DECISION,
-                DisciplinaryCase.Status.RESOLVED,
-            ),
-            DisciplinaryCase.Status.RESOLVED: (DisciplinaryCase.Status.CLOSED,),
-            DisciplinaryCase.Status.REFERRED: (DisciplinaryCase.Status.INITIAL_REVIEW,),
-        }
-        allowed = transitions.get(case.status, ())
-        self.fields['status'].choices = [(status, DisciplinaryCase.Status(status).label) for status in allowed]
+        self.fields['status'].choices = self.ALL_STATUSES
+        positions = _designation_choices(user)
+        self.fields['actor_position'].choices = [('', '— Select position —'), *positions]
+        self.default_position = next(iter(positions), ('', ''))[0]
         for field in self.fields.values():
-            field.widget.attrs.setdefault('class', 'form-select' if isinstance(field.widget, forms.Select) else 'form-control')
+            field.widget.attrs.setdefault(
+                'class',
+                'form-select' if isinstance(field.widget, forms.Select) else 'form-control',
+            )
 
     def clean_status(self):
         status = self.cleaned_data['status']
-        allowed_statuses = {value for value, _ in self.fields['status'].choices}
-        if status not in allowed_statuses:
-            raise ValidationError('That status transition is not allowed from the case’s current state.')
+        if not status:
+            raise ValidationError('Please select a new status.')
+        all_values = {v for v, _ in self.ALL_STATUSES}
+        if status not in all_values:
+            raise ValidationError('That is not a valid case status.')
+        if not (self.user and self.user.is_superuser):
+            if status not in self.TRANSITIONS.get(self.case.status, ()):
+                raise ValidationError('That status change is not allowed from the case’s current status.')
         return status
 
     def clean_remarks(self):
@@ -351,6 +521,13 @@ class CaseStatusForm(forms.Form):
             raise ValidationError('Record why the case status is changing.')
         return remarks
 
+    def clean(self):
+        cleaned = super().clean()
+        if not cleaned.get('actor_position') and self.default_position:
+            cleaned['actor_position'] = self.default_position
+        if not cleaned.get('actor_position'):
+            self.add_error('actor_position', 'Select your position / designation.')
+        return cleaned
 
 class CaseDecisionForm(forms.Form):
     finding = forms.ChoiceField(choices=DisciplinaryCase.Finding.choices)

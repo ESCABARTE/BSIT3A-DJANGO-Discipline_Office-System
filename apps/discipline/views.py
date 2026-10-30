@@ -15,6 +15,7 @@ from .forms import (
     AnswerForm,
     CaseClassificationForm,
     CaseDecisionForm,
+    CaseLevelForm,
     CaseReceiptForm,
     CaseStatusForm,
     CommitteeForm,
@@ -24,6 +25,7 @@ from .forms import (
     OffenseCategoryForm,
     ProfileSearchForm,
     ReportForm,
+    ReviewCaseForm,
     ServeSummonsForm,
     SummonsApprovalForm,
     StageForm,
@@ -158,6 +160,7 @@ def _create_report_case(request, form, report_type):
         with transaction.atomic():
             case = DisciplinaryCase.objects.create(
                 source_type=report_type,
+                case_level=form.cleaned_data.get('case_level', ''),
                 assigned_officer=request.user if is_discipline_officer(request.user) else None,
             )
             report = form.save(commit=False)
@@ -174,14 +177,13 @@ def _create_report_case(request, form, report_type):
                 case.classification = form.cleaned_data['classification']
                 case.offense_category = form.cleaned_data.get('offense_category')
                 case.policy_version = case.offense_category.policy_version
-                case.classification_basis = form.cleaned_data.get('classification_basis', '')
-                case.classification_remarks = form.cleaned_data.get('classification_remarks', '')
+                case.classification_factual_basis = form.cleaned_data.get('classification_factual_basis', '')
                 case.classified_by = request.user
                 case.classified_at = timezone.now()
                 case.classification_reviewed = False
                 case.save(update_fields=(
-                    'classification', 'offense_category', 'classification_basis',
-                    'classification_remarks', 'policy_version', 'classified_by', 'classified_at',
+                    'classification', 'offense_category', 'classification_factual_basis',
+                    'policy_version', 'classified_by', 'classified_at',
                     'classification_reviewed', 'updated_at',
                 ))
                 CaseAuditLog.objects.create(
@@ -191,7 +193,7 @@ def _create_report_case(request, form, report_type):
                     details=(
                         f'Preliminary classification: {case.get_classification_display()}; '
                         f'policy: {case.offense_category.name if case.offense_category else "not selected"}; '
-                        f'basis: {case.classification_basis}; remarks: {case.classification_remarks}'
+                        f'factual basis: {case.classification_factual_basis}'
                     ),
                 )
             person_name = form.cleaned_data.get('respondent_name')
@@ -317,7 +319,7 @@ def case_detail(request, pk):
     else:
         visible_summonses = case.summonses.filter(respondent__account=request.user).select_related('respondent')
         visible_answers = case.answers.filter(respondent__account=request.user).select_related('respondent')
-    status_form = CaseStatusForm(case=case)
+    status_form = CaseStatusForm(case=case, user=request.user)
     decision_eligible = case.status in (
         DisciplinaryCase.Status.DECISION,
         DisciplinaryCase.Status.APPEAL,
@@ -336,13 +338,14 @@ def case_detail(request, pk):
         **_navigation_context(request),
         'case': case,
         'visible_actions': case.actions.exclude(
-            action_type=CaseAction.ActionType.SANCTION,
+            action_type__in=(CaseAction.ActionType.SANCTION, CaseAction.ActionType.REVIEW),
         ).select_related('actor'),
         'visible_decisions': case.actions.filter(
             action_type=CaseAction.ActionType.DECISION,
         ).select_related('actor'),
         'summons_history': case.audit_logs.filter(action__startswith='summons_').select_related('actor'),
         'status_history': case.actions.filter(action_type=CaseAction.ActionType.STATUS).select_related('actor').order_by('-created_at'),
+        'review_history': case.actions.filter(action_type=CaseAction.ActionType.REVIEW).select_related('actor').order_by('-created_at'),
         'classification_history': case.audit_logs.filter(action='classification_recorded').select_related('actor'),
         'case_documents': case.documents.all() if can_view_confidential else (),
         'visible_summonses': visible_summonses,
@@ -351,7 +354,9 @@ def case_detail(request, pk):
         'can_review': is_discipline_officer(request.user),
         'can_finalize_decision': can_finalize_decision(request.user),
         'decision_eligible': decision_eligible,
-        'status_transition_available': bool(status_form.fields['status'].choices),
+        'status_transition_available': bool(
+            request.user.is_superuser or status_form.TRANSITIONS.get(case.status)
+        ),
         'status_update_form': status_form,
         'decision_form': decision_form,
         'has_respondent': case.people.filter(role=CasePerson.Role.RESPONDENT).exists(),
@@ -396,7 +401,8 @@ def deny_public_case_media(request, path):
 @require_http_methods(['GET', 'POST'])
 def case_action(request, pk):
     case = _case_visible_or_404(request, pk)
-    form = WorkflowActionForm(request.POST or None)
+    require_officer(request.user)
+    form = WorkflowActionForm(request.POST or None, user=request.user)
     if request.method == 'POST' and form.is_valid():
         action_type = form.cleaned_data['action_type']
         if action_type == CaseAction.ActionType.FINDING:
@@ -408,6 +414,7 @@ def case_action(request, pk):
             action = form.save(commit=False)
             action.case = case
             action.actor = request.user
+            action.authority_position = form.cleaned_data['actor_position']
             action.from_status = previous_status
             action.save()
             update_fields = []
@@ -424,6 +431,56 @@ def case_action(request, pk):
         messages.success(request, 'The case action was recorded.')
         return redirect('discipline:case_detail', pk=case.pk)
     return render(request, 'discipline/action_form.html', {'form': form, 'case': case, **_navigation_context(request)})
+
+
+@login_required(login_url='login')
+@require_http_methods(['GET', 'POST'])
+def case_review(request, pk):
+    case = _case_visible_or_404(request, pk)
+    require_officer(request.user)
+    form = ReviewCaseForm(request.POST or None, user=request.user)
+    if request.method == 'POST' and form.is_valid():
+        recommendation = dict(ReviewCaseForm.RECOMMENDATION_CHOICES)[
+            form.cleaned_data['recommendation']
+        ]
+        recommended_classification = dict(DisciplinaryCase.Classification.choices).get(
+            form.cleaned_data['recommended_classification'],
+            'No recommendation',
+        )
+        previous_classification = (
+            case.get_classification_display() if case.classification else 'Not classified'
+        )
+        review_details = '\n\n'.join((
+            f'Review findings:\n{form.cleaned_data["information_findings"].strip()}',
+            'Supporting document verification remarks:\n'
+            f'{form.cleaned_data["document_verification"].strip() or "Not recorded"}',
+            f'Classification at review: {previous_classification}',
+            f'Recommended classification:\n{recommended_classification}',
+            f'Review remarks:\n{form.cleaned_data["review_remarks"].strip()}',
+        ))
+        with transaction.atomic():
+            CaseAction.objects.create(
+                case=case,
+                action_type=CaseAction.ActionType.REVIEW,
+                recommendation=recommendation,
+                details=review_details,
+                actor=request.user,
+                authority_position=form.cleaned_data['actor_position'],
+            )
+            CaseAuditLog.objects.create(
+                case=case,
+                actor=request.user,
+                action='case_reviewed',
+                details=f'Recommendation: {recommendation}',
+            )
+        messages.success(request, 'The review record and recommendation were saved.')
+        return redirect('discipline:case_detail', pk=case.pk)
+    return render(request, 'discipline/review_case.html', {
+        'case': case,
+        'form': form,
+        'case_documents': case.documents.all(),
+        **_navigation_context(request),
+    })
 
 
 @login_required(login_url='login')
@@ -452,7 +509,7 @@ def case_classify(request, pk):
                 details=(
                     f'{old_classification} ({old_policy}) → {case.get_classification_display()} '
                     f'({case.offense_category.name}, {case.policy_version}); reason: {form.cleaned_data["change_reason"]}; '
-                    f'factual basis: {case.classification_basis}; remarks: {case.classification_remarks}'
+                    f'factual basis: {case.classification_factual_basis}'
                 ),
             )
         messages.success(request, 'Preliminary classification saved for authorized review.')
@@ -461,6 +518,32 @@ def case_classify(request, pk):
         'form': form,
         'case': case,
         'form_title': 'Record preliminary classification',
+        **_navigation_context(request),
+    })
+
+
+@login_required(login_url='login')
+@require_http_methods(['GET', 'POST'])
+def case_level_update(request, pk):
+    case = _case_visible_or_404(request, pk)
+    require_officer(request.user)
+    form = CaseLevelForm(request.POST or None, instance=case)
+    if request.method == 'POST' and form.is_valid():
+        previous = case.get_case_level_display() if case.case_level else 'Not recorded'
+        with transaction.atomic():
+            case = form.save()
+            CaseAuditLog.objects.create(
+                case=case,
+                actor=request.user,
+                action='case_level_updated',
+                details=f'{previous} → {case.get_case_level_display()}',
+            )
+        messages.success(request, 'Case Level was updated and added to the case history.')
+        return redirect('discipline:case_detail', pk=case.pk)
+    return render(request, 'discipline/action_form.html', {
+        'form': form,
+        'case': case,
+        'form_title': 'Verify or Update Case Level',
         **_navigation_context(request),
     })
 
@@ -512,7 +595,7 @@ def case_receive(request, pk):
 def case_status_update(request, pk):
     case = _case_visible_or_404(request, pk)
     require_officer(request.user)
-    form = CaseStatusForm(request.POST or None, case=case)
+    form = CaseStatusForm(request.POST or None, case=case, user=request.user)
     if request.method == 'POST' and form.is_valid():
         target = form.cleaned_data['status']
         if target in (DisciplinaryCase.Status.RESOLVED, DisciplinaryCase.Status.CLOSED):
@@ -530,6 +613,7 @@ def case_status_update(request, pk):
                 to_status=target,
                 details=form.cleaned_data['remarks'],
                 actor=request.user,
+                authority_position=form.cleaned_data['actor_position'],
             )
             CaseAuditLog.objects.create(
                 case=case,
@@ -601,6 +685,7 @@ def case_decision(request, pk):
                 to_status=case.status,
                 details='Status updated after an authorized final decision was recorded.',
                 actor=request.user,
+                authority_position=action.authority_position,
             )
             CaseAuditLog.objects.create(
                 case=case,
@@ -1225,7 +1310,7 @@ def reports(request):
 @login_required(login_url='login')
 @require_http_methods(['GET', 'POST'])
 def intake(request):
-    """Single unified page for both Written Complaint and Incident Report."""
+    """Single reporting form for complaints and official incident reports."""
     raw_type = request.POST.get('report_type') if request.method == 'POST' else request.GET.get('report_type')
     if raw_type is None or raw_type == '':
         raw_type = (
@@ -1291,7 +1376,7 @@ def incident_log(request):
     from django.db.models import Q as Ql
 
     query        = request.GET.get('q', '').strip()
-    type_filter  = request.GET.get('report_type', '').strip()
+    case_level_filter = request.GET.get('case_level', '').strip()
     status_filter = request.GET.get('status', '').strip()
 
     qs = CaseReport.objects.select_related('case', 'submitted_by').order_by('-submitted_at')
@@ -1307,8 +1392,8 @@ def incident_log(request):
             Ql(respondent_student_id__icontains=query) |
             Ql(complainant_name__icontains=query)
         )
-    if type_filter in CaseReport.ReportType.values:
-        qs = qs.filter(report_type=type_filter)
+    if case_level_filter in DisciplinaryCase.CaseLevel.values:
+        qs = qs.filter(case__case_level=case_level_filter)
     if status_filter in DisciplinaryCase.Status.values:
         qs = qs.filter(case__status=status_filter)
 
@@ -1318,9 +1403,9 @@ def incident_log(request):
     return render(request, 'discipline/incident_log.html', {
         'reports':       page,
         'query':         query,
-        'type_filter':   type_filter,
+        'case_level_filter': case_level_filter,
         'status_filter': status_filter,
-        'report_type_choices': CaseReport.ReportType.choices,
+        'case_level_choices': DisciplinaryCase.CaseLevel.choices,
         'status_choices': DisciplinaryCase.Status.choices,
         **_navigation_context(request),
     })

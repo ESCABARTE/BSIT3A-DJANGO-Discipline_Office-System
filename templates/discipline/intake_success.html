@@ -6,7 +6,7 @@
   <nav aria-label="breadcrumb" class="mb-2">
     <ol class="breadcrumb">
       <li class="breadcrumb-item"><a href="{% url 'discipline:dashboard' %}">Dashboard</a></li>
-      <li class="breadcrumb-item"><a href="{% url 'discipline:intake' %}">Discipline Office Intake</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'discipline:intake' %}">Incident Report</a></li>
       <li class="breadcrumb-item active" aria-current="page">Submission received</li>
     </ol>
   </nav>
@@ -22,7 +22,7 @@
           </div>
           <h1 class="h2 fw-bold mb-1">Submission received</h1>
           <p class="text-secondary mb-0">
-            Your {% if case.source_type == 'complaint' %}written complaint{% else %}incident report{% endif %}
+            Your {% if case.source_type == 'complaint' %}complaint{% else %}incident report{% endif %}
             has been submitted to the Discipline Office for authorised review.
           </p>
         </div>
@@ -40,11 +40,11 @@
               <span class="fw-bold font-monospace fs-5 text-primary">{{ case.reference }}</span>
             </dd>
 
-            <dt class="col-sm-5 text-secondary">Report type</dt>
+            <dt class="col-sm-5 text-secondary">Submission type</dt>
             <dd class="col-sm-7">
               <span class="badge {% if case.source_type == 'complaint' %}bg-blue-lt{% else %}bg-orange-lt{% endif %}">
                 {% if case.source_type == 'complaint' %}
-                  <i class="fas fa-file-lines me-1" aria-hidden="true"></i>Written Complaint
+                  <i class="fas fa-file-lines me-1" aria-hidden="true"></i>Complaint
                 {% else %}
                   <i class="fas fa-clipboard-list me-1" aria-hidden="true"></i>Incident Report
                 {% endif %}
@@ -60,7 +60,7 @@
             </dd>
 
             {% if case.report.respondent_name %}
-            <dt class="col-sm-5 text-secondary">Student name on record</dt>
+            <dt class="col-sm-5 text-secondary">Reported Person</dt>
             <dd class="col-sm-7">{{ case.report.respondent_name }}</dd>
             {% endif %}
           </dl>

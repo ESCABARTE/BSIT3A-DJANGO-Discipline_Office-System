@@ -1,6 +1,6 @@
 {% extends "theme/base.html" %}
 {% load static %}
-{% block title %}Discipline Office Intake | Discipline Office{% endblock %}
+{% block title %}Incident Report | Discipline Office{% endblock %}
 
 {% block extra_js %}
 <script>
@@ -38,6 +38,8 @@
     // Officer fields
     const pos = $('id_reporting_position');
     if (pos) pos.required = type === 'incident';
+    const level = $('id_case_level');
+    if (level) level.required = type === 'incident';
     // Narration always required when a type is chosen
     const narr = $('id_narration');
     if (narr) narr.required = !!type;
@@ -48,7 +50,7 @@
     const btnLabel   = $('btn-submit-label');
     if (!btnPrimary) return;
     if (type === 'complaint') {
-      btnLabel.textContent = 'Submit Written Complaint';
+      btnLabel.textContent = 'Submit Complaint';
       btnPrimary.className = 'btn btn-primary';
     } else if (type === 'incident') {
       btnLabel.textContent = 'Submit Incident Report';
@@ -66,7 +68,7 @@
       alert('Please select a report type before submitting.');
       return;
     }
-    const label = currentType === 'complaint' ? 'Written Complaint' : 'Incident Report';
+    const label = currentType === 'complaint' ? 'Complaint' : 'Incident Report';
     const ok = confirm(
       `You are about to submit a ${label} to the Discipline Office.\n\n` +
       'Submission does not determine responsibility or decide a disciplinary outcome. ' +
@@ -118,9 +120,9 @@
   <div class="page-header mb-4">
     <div>
       <div class="page-pretitle">Discipline Office · Intake</div>
-      <h1 class="page-title">Discipline Office Intake</h1>
+      <h1 class="page-title">Incident Report</h1>
       <p class="text-secondary mb-0 mt-1">
-        Submit a written complaint or file an incident report for review by the Discipline Office.
+        Submit a complaint or incident report through this single reporting form for review by the Discipline Office.
         Submission does not determine responsibility or decide a disciplinary outcome.
       </p>
     </div>
@@ -159,7 +161,7 @@
           <div class="card-body">
             <label class="form-label" for="report_type">Submission type</label>
             <select class="form-select" id="report_type" name="report_type" aria-describedby="report-type-hint">
-              <option value="complaint" {% if report_type == 'complaint' %}selected{% endif %}>Written Complaint</option>
+              <option value="complaint" {% if report_type == 'complaint' %}selected{% endif %}>Complaint</option>
               {% if can_file_incident %}
               <option value="incident" {% if report_type == 'incident' %}selected{% endif %}>Incident Report</option>
               {% endif %}
@@ -168,7 +170,7 @@
               {% if can_file_incident %}
                 Choose the submission type; the relevant details are shown in this same form.
               {% else %}
-                Written complaints are submitted for review by the Discipline Office.
+                Use this form to submit information for review by the Discipline Office.
               {% endif %}
             </div>
           </div>
@@ -293,17 +295,17 @@
         </div>
       </section>
 
-      {# ── Step 3 — Student / Respondent information ─────────── #}
+      {# ── Step 3 — Reported person information ─────────── #}
       <section class="intake-section mb-4" aria-labelledby="step-student-heading">
         <h2 class="intake-section-title" id="step-student-heading">
-          <span class="intake-step-badge">3</span> Student information
+          <span class="intake-step-badge">3</span> Reported Person
           <span class="text-secondary fs-6 fw-normal ms-2">(if known)</span>
         </h2>
         <div class="card">
           <div class="card-body">
             <div class="row g-3">
               <div class="col-12 col-md-6">
-                <label class="form-label" for="id_respondent_name">Student name</label>
+                <label class="form-label" for="id_respondent_name">Reported person name</label>
                 {% if form %}
                   {{ form.respondent_name }}
                   {% for e in form.respondent_name.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
@@ -333,6 +335,16 @@
                   {{ form.respondent_year_section }}
                 {% else %}
                   <input type="text" id="id_respondent_year_section" name="respondent_year_section" class="form-control" maxlength="120">
+                {% endif %}
+              </div>
+              <div class="col-12 col-md-6">
+                {% if form %}
+                <label class="form-label" for="{{ form.case_level.id_for_label }}">
+                  Case Level{% if form.case_level.field.required %}<span class="text-danger" aria-hidden="true"> *</span>{% endif %}
+                </label>
+                {{ form.case_level }}
+                {% for e in form.case_level.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+                <div class="form-hint">Choose JHS, SHS, or College for the reported person. If unknown, authorized staff can verify it later.</div>
                 {% endif %}
               </div>
             </div>
@@ -407,14 +419,9 @@
                 {% for e in form.offense_category.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
               </div>
               <div class="col-12">
-                <label class="form-label" for="{{ form.classification_basis.id_for_label }}">Factual basis</label>
-                {{ form.classification_basis }}
-                {% for e in form.classification_basis.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
-              </div>
-              <div class="col-12">
-                <label class="form-label" for="{{ form.classification_remarks.id_for_label }}">Classification remarks</label>
-                {{ form.classification_remarks }}
-                {% for e in form.classification_remarks.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+                <label class="form-label" for="{{ form.classification_factual_basis.id_for_label }}">Classification and Factual Basis</label>
+                {{ form.classification_factual_basis }}
+                {% for e in form.classification_factual_basis.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
               </div>
             </div>
           </div></div>
@@ -509,7 +516,7 @@
               >
                 <i class="fas fa-paper-plane me-2" aria-hidden="true"></i>
                 <span id="btn-submit-label">
-                  {% if report_type == 'complaint' %}Submit Written Complaint
+                  {% if report_type == 'complaint' %}Submit Complaint
                   {% elif report_type == 'incident' %}Submit Incident Report
                   {% else %}Submit{% endif %}
                 </span>

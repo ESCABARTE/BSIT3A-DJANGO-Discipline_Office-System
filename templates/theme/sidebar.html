@@ -68,7 +68,7 @@
             <ul class="navbar-nav ps-4">
               {% if is_authorized_official %}
               <li class="nav-item">
-                <a class="nav-link {% if route == 'dashboard' and request.resolver_match.app_name == 'discipline' or route == 'case_detail' or route == 'case_action' or route == 'case_classify' or route == 'case_receive' or route == 'case_status_update' or route == 'case_decision' or route == 'stage_create' or route == 'summons_create' or route == 'summons_edit' or route == 'summons_approve' or route == 'summons_preview' or route == 'summons_print' or route == 'summons_receipt_print' or route == 'summons_serve' or route == 'summons_extension' or route == 'answer_submit' or route == 'case_document_download' %}active{% endif %}"
+                <a class="nav-link {% if route == 'dashboard' and request.resolver_match.app_name == 'discipline' or route == 'case_detail' or route == 'case_action' or route == 'case_review' or route == 'case_level_update' or route == 'case_classify' or route == 'case_receive' or route == 'case_status_update' or route == 'case_decision' or route == 'stage_create' or route == 'summons_create' or route == 'summons_edit' or route == 'summons_approve' or route == 'summons_preview' or route == 'summons_print' or route == 'summons_receipt_print' or route == 'summons_serve' or route == 'summons_extension' or route == 'answer_submit' or route == 'case_document_download' %}active{% endif %}"
                    href="{% url 'discipline:dashboard' %}">
                   <span class="nav-link-icon"><i class="fas fa-gavel" aria-hidden="true"></i></span>
             <span class="nav-link-title">Active Cases</span>
@@ -86,7 +86,7 @@
                 <a class="nav-link {% if route == 'intake' or route == 'intake_success' %}active{% endif %}"
                    href="{% url 'discipline:intake' %}">
                   <span class="nav-link-icon"><i class="fas fa-clipboard-list" aria-hidden="true"></i></span>
-                  <span class="nav-link-title">Submit a Report</span>
+                  <span class="nav-link-title">Incident Report</span>
                 </a>
               </li>
               {% if is_authorized_official %}

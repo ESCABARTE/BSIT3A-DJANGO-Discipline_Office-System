@@ -70,7 +70,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
       {# 2 — Review Case (record recommendations / notes) #}
       {% if can_review %}
-      <a class="btn btn-outline-primary" href="{% url 'discipline:case_action' case.pk %}">
+      <a class="btn btn-outline-primary" href="{% url 'discipline:case_review' case.pk %}">
         <i class="fas fa-magnifying-glass me-2" aria-hidden="true"></i>Review Case
       </a>
       {% endif %}
@@ -144,6 +144,8 @@ document.addEventListener('DOMContentLoaded', function () {
             </dd>
             <dt class="col-sm-4">Report type</dt>
             <dd class="col-sm-8">{{ case.report.get_report_type_display }}</dd>
+            <dt class="col-sm-4">Case Level</dt>
+            <dd class="col-sm-8">{{ case.get_case_level_display|default:'Needs verification' }}</dd>
             <dt class="col-sm-4">Date filed</dt>
             <dd class="col-sm-8">{{ case.report.submitted_at|date:'M j, Y · g:i A' }}</dd>
             <dt class="col-sm-4">Assigned staff</dt>
@@ -162,14 +164,21 @@ document.addEventListener('DOMContentLoaded', function () {
         </div>
       </section>
 
-      {# Reported Student Information #}
+      {# Reported Person #}
       <section class="card mb-3">
-        <div class="card-header"><h2 class="card-title">Reported Student Information</h2></div>
+        <div class="card-header d-flex justify-content-between align-items-center gap-2">
+          <h2 class="card-title mb-0">Reported Person</h2>
+          {% if can_review %}
+          <a class="btn btn-sm btn-outline-secondary" href="{% url 'discipline:case_level_update' case.pk %}">
+            Verify or Update Case Level
+          </a>
+          {% endif %}
+        </div>
         <div class="card-body">
           <div class="alert alert-secondary d-flex gap-2 align-items-start py-2 mb-3" role="note">
             <i class="fas fa-info-circle text-secondary flex-shrink-0 mt-1" aria-hidden="true"></i>
             <span class="small text-secondary">
-              This student was named in the submitted report. Being reported does not establish responsibility.
+              This person was named in the submitted report. Being reported does not establish responsibility.
             </span>
           </div>
           <dl class="row mb-0">
@@ -181,6 +190,8 @@ document.addEventListener('DOMContentLoaded', function () {
             <dd class="col-sm-8">{{ case.report.respondent_program|default:'Not recorded' }}</dd>
             <dt class="col-sm-4">Year / section</dt>
             <dd class="col-sm-8">{{ case.report.respondent_year_section|default:'Not recorded' }}</dd>
+            <dt class="col-sm-4">Case Level</dt>
+            <dd class="col-sm-8">{{ case.get_case_level_display|default:'Needs verification' }}</dd>
           </dl>
         </div>
       </section>
@@ -283,9 +294,9 @@ document.addEventListener('DOMContentLoaded', function () {
               · Version {{ case.policy_version }}
             </dd>
             {% endif %}
-            {% if case.classification_basis %}
-            <dt class="col-sm-4">Classification basis</dt>
-            <dd class="col-sm-8">{{ case.classification_basis|linebreaksbr }}</dd>
+            {% if case.classification_factual_basis %}
+            <dt class="col-sm-4">Classification and Factual Basis</dt>
+            <dd class="col-sm-8">{{ case.classification_factual_basis|linebreaksbr }}</dd>
             {% endif %}
             {% if case.classified_by %}
             <dt class="col-sm-4">Classified by</dt>
@@ -386,12 +397,37 @@ document.addEventListener('DOMContentLoaded', function () {
               <span class="text-secondary small">{{ action.created_at|date:'M j, Y · g:i A' }}</span>
             </div>
             <div class="text-secondary small">{{ action.actor.get_full_name|default:action.actor.username }}</div>
+            {% if action.authority_position %}
+            <div class="text-secondary small">Position / Designation: {{ action.authority_position }}</div>
+            {% endif %}
             {% if action.details %}
             <div class="mt-1 text-break">{{ action.details|linebreaksbr }}</div>
             {% endif %}
           </div>
           {% empty %}
           <div class="list-group-item text-secondary">No status changes recorded.</div>
+          {% endfor %}
+        </div>
+      </section>
+
+      {# Review History #}
+      <section class="card mb-3">
+        <div class="card-header"><h2 class="card-title">Review History</h2></div>
+        <div class="list-group list-group-flush">
+          {% for review in review_history %}
+          <article class="list-group-item">
+            <div class="d-flex flex-wrap justify-content-between gap-2">
+              <strong>{{ review.recommendation }}</strong>
+              <span class="text-secondary small">{{ review.created_at|date:'M j, Y · g:i A' }}</span>
+            </div>
+            <div class="text-secondary small">
+              {{ review.actor.get_full_name|default:review.actor.username }}
+              {% if review.authority_position %}· {{ review.authority_position }}{% endif %}
+            </div>
+            <div class="mt-2 text-break">{{ review.details|linebreaksbr }}</div>
+          </article>
+          {% empty %}
+          <div class="list-group-item text-secondary">No review records saved yet.</div>
           {% endfor %}
         </div>
       </section>
@@ -680,8 +716,10 @@ document.addEventListener('DOMContentLoaded', function () {
               <div class="row g-2 small">
                 <div class="col-5 text-secondary fw-semibold">Reference</div>
                 <div class="col-7 font-monospace">{{ case.reference }}</div>
-                <div class="col-5 text-secondary fw-semibold">Reported student</div>
+                <div class="col-5 text-secondary fw-semibold">Reported Person</div>
                 <div class="col-7">{{ case.report.respondent_name|default:'Not identified' }}</div>
+                <div class="col-5 text-secondary fw-semibold">Case Level</div>
+                <div class="col-7">{{ case.get_case_level_display|default:'Needs verification' }}</div>
                 <div class="col-5 text-secondary fw-semibold">Current status</div>
                 <div class="col-7">
                   <span class="badge bg-primary-lt">{{ case.get_status_display }}</span>
@@ -705,6 +743,19 @@ document.addEventListener('DOMContentLoaded', function () {
             </select>
             {# Per-status descriptions #}
             <div class="mt-2 small text-secondary" id="status-description" aria-live="polite"></div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold" for="id_actor_position">
+              Position / Designation <span class="text-danger" aria-hidden="true">*</span>
+            </label>
+            <select name="actor_position" id="id_actor_position" class="form-select" required>
+              {% for value, label in status_update_form.actor_position.field.choices %}
+              <option value="{{ value }}" {% if status_update_form.actor_position.value == value %}selected{% endif %}>
+                {{ label }}
+              </option>
+              {% endfor %}
+            </select>
           </div>
 
           <div class="mb-2">
@@ -785,7 +836,7 @@ document.addEventListener('DOMContentLoaded', function () {
               <div class="row g-2 small">
                 <div class="col-5 text-secondary fw-semibold">Reference</div>
                 <div class="col-7 font-monospace">{{ case.reference }}</div>
-                <div class="col-5 text-secondary fw-semibold">Reported student</div>
+                <div class="col-5 text-secondary fw-semibold">Reported Person</div>
                 <div class="col-7">{{ case.report.respondent_name|default:'Not identified' }}</div>
                 <div class="col-5 text-secondary fw-semibold">Current status</div>
                 <div class="col-7"><span class="badge bg-primary-lt">{{ case.get_status_display }}</span></div>

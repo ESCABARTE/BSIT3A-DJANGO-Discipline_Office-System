@@ -1,0 +1,141 @@
+{% extends "theme/base.html" %}
+{% block title %}Review {{ case.reference }} | Discipline Office{% endblock %}
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const form = document.getElementById('case-review-form');
+  if (form) {
+    form.addEventListener('submit', function (event) {
+      if (!confirm('Save this review record and recommendation? This will not make a final disciplinary decision.')) {
+        event.preventDefault();
+      }
+    });
+  }
+});
+</script>
+{% endblock %}
+{% block content %}
+<main class="container-xl">
+  {% include 'theme/messages.html' %}
+  <nav aria-label="breadcrumb" class="mb-2">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{% url 'discipline:dashboard' %}">Dashboard</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'discipline:case_detail' case.pk %}">{{ case.reference }}</a></li>
+      <li class="breadcrumb-item active" aria-current="page">Review Case</li>
+    </ol>
+  </nav>
+
+  <header class="page-header mb-4">
+    <div>
+      <div class="page-pretitle">Case review · {{ case.reference }}</div>
+      <h1 class="page-title">Review Case</h1>
+      <p class="text-secondary mb-0">Verify the submitted information and record a recommendation. This review is not a final disciplinary decision.</p>
+    </div>
+  </header>
+
+  <div class="alert alert-warning" role="note">
+    A complaint or preliminary classification does not establish responsibility. Only authorized personnel may record a final decision.
+  </div>
+
+  <section class="card mb-4">
+    <div class="card-header"><h2 class="card-title">Case Information</h2></div>
+    <div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-sm-3">Case reference</dt><dd class="col-sm-9 font-monospace">{{ case.reference }}</dd>
+        <dt class="col-sm-3">Reported Person</dt><dd class="col-sm-9">{{ case.report.respondent_name|default:'Not identified' }}</dd>
+        <dt class="col-sm-3">Case Level</dt><dd class="col-sm-9">{{ case.get_case_level_display|default:'Needs verification' }}</dd>
+        <dt class="col-sm-3">Current status</dt><dd class="col-sm-9">{{ case.get_status_display }}</dd>
+        <dt class="col-sm-3">Assigned staff</dt>
+        <dd class="col-sm-9">
+          {% if case.assigned_officer %}
+            {{ case.assigned_officer.get_full_name|default:case.assigned_officer.username }}
+          {% else %}
+            Not assigned
+          {% endif %}
+        </dd>
+        <dt class="col-sm-3">Incident date / location</dt>
+        <dd class="col-sm-9">{{ case.report.incident_at|date:'M j, Y · g:i A'|default:'Not recorded' }} · {{ case.report.incident_place|default:'Location not recorded' }}</dd>
+        <dt class="col-sm-3">Submitted report</dt><dd class="col-sm-9 text-break">{{ case.report.narration|linebreaksbr }}</dd>
+        <dt class="col-sm-3">Classification</dt>
+        <dd class="col-sm-9">{{ case.get_classification_display|default:'Not classified' }}</dd>
+        {% if case.classification_factual_basis %}
+        <dt class="col-sm-3">Classification and Factual Basis</dt>
+        <dd class="col-sm-9">{{ case.classification_factual_basis|linebreaksbr }}</dd>
+        {% endif %}
+      </dl>
+    </div>
+  </section>
+
+  <section class="card mb-4">
+    <div class="card-header"><h2 class="card-title">Supporting Documents and Evidence</h2></div>
+    <div class="list-group list-group-flush">
+      {% for document in case_documents %}
+      <a class="list-group-item list-group-item-action"
+         href="{% url 'discipline:case_document_download' case.pk document.pk %}">
+        <i class="fas fa-file me-2" aria-hidden="true"></i>{{ document.original_name }}
+        <span class="text-secondary small">· {{ document.uploaded_at|date:'M j, Y · g:i A' }}</span>
+      </a>
+      {% empty %}
+      <div class="list-group-item text-secondary">No supporting documents have been uploaded.</div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <form method="post" class="card" id="case-review-form">
+    {% csrf_token %}
+    <div class="card-body">
+      <h2 class="h3 mb-3">Review Actions</h2>
+
+      <section class="mb-4">
+        <h3 class="h5">1. Review Case Information</h3>
+        <p class="text-secondary">Record whether the incident report is complete and consistent, including missing or unclear details.</p>
+        <label class="form-label" for="{{ form.information_findings.id_for_label }}">{{ form.information_findings.label }} <span class="text-danger">*</span></label>
+        {{ form.information_findings }}
+        {% for error in form.information_findings.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+      </section>
+
+      <section class="mb-4">
+        <h3 class="h5">2. Verify Supporting Documents</h3>
+        <p class="text-secondary">Review the listed documents and note whether they are relevant or require follow-up.</p>
+        <label class="form-label" for="{{ form.document_verification.id_for_label }}">{{ form.document_verification.label }}</label>
+        {{ form.document_verification }}
+        {% for error in form.document_verification.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+      </section>
+
+      <section class="mb-4">
+        <h3 class="h5">3. Classification Review</h3>
+        <p class="text-secondary">The current classification is preliminary. Any recommendation below is advisory and preserves the existing classification history.</p>
+        <label class="form-label" for="{{ form.recommended_classification.id_for_label }}">{{ form.recommended_classification.label }}</label>
+        {{ form.recommended_classification }}
+        {% for error in form.recommended_classification.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+      </section>
+
+      <section class="mb-4">
+        <h3 class="h5">4. Review Recommendation</h3>
+        <label class="form-label" for="{{ form.recommendation.id_for_label }}">{{ form.recommendation.label }} <span class="text-danger">*</span></label>
+        {{ form.recommendation }}
+        {% for error in form.recommendation.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+        <div class="form-hint">A recommendation does not approve a sanction or determine responsibility.</div>
+      </section>
+
+      <section class="mb-4">
+        <h3 class="h5">5. Review Remarks</h3>
+        <label class="form-label" for="{{ form.review_remarks.id_for_label }}">{{ form.review_remarks.label }} <span class="text-danger">*</span></label>
+        {{ form.review_remarks }}
+        {% for error in form.review_remarks.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+      </section>
+
+      <div class="mb-3">
+        <label class="form-label" for="{{ form.actor_position.id_for_label }}">{{ form.actor_position.label }} <span class="text-danger">*</span></label>
+        {{ form.actor_position }}
+        {% for error in form.actor_position.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+      </div>
+      {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+    </div>
+    <div class="card-footer d-flex justify-content-between gap-2">
+      <a class="btn btn-outline-secondary" href="{% url 'discipline:case_detail' case.pk %}">Return to Case Details</a>
+      <button type="submit" class="btn btn-primary">Save Review Record</button>
+    </div>
+  </form>
+</main>
+{% endblock %}

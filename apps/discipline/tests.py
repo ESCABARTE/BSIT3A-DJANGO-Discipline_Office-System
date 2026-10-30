@@ -8,7 +8,7 @@ from django.test import TestCase
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 
-from .forms import CaseDecisionForm, CaseStatusForm, WorkflowActionForm
+from .forms import CaseDecisionForm, CaseStatusForm, ReviewCaseForm, WorkflowActionForm
 from .models import (
     CaseAction,
     CaseAuditLog,
@@ -328,6 +328,7 @@ class DisciplineAccessAndWorkflowTests(TestCase):
             case=case,
             action_type=CaseAction.ActionType.STATUS,
             to_status=DisciplinaryCase.Status.INITIAL_REVIEW,
+            authority_position='Staff',
         ).exists())
 
         self.client.force_login(self.student)
@@ -336,6 +337,98 @@ class DisciplineAccessAndWorkflowTests(TestCase):
             'remarks': 'Unauthorized status change.',
         })
         self.assertEqual(denied_response.status_code, 403)
+
+    def test_status_form_lists_all_twelve_statuses_and_limits_designation(self):
+        case, _ = self.make_report(submitter=self.student)
+        staff_form = CaseStatusForm(case=case, user=self.staff)
+        admin_form = CaseStatusForm(case=case, user=self.admin)
+
+        self.assertEqual(
+            [value for value, _ in staff_form.fields['status'].choices],
+            [
+                'initial_review', 'returned', 'investigation', 'hearing', 'committee',
+                'decision', 'decision_recorded', 'guardian_hearing', 'appeal',
+                'resolved', 'closed', 'referred',
+            ],
+        )
+        self.assertEqual(staff_form.fields['actor_position'].choices, [('', '— Select position —'), ('Staff', 'Staff')])
+        self.assertEqual(admin_form.fields['actor_position'].choices, [('', '— Select position —'), ('Admin', 'Admin')])
+
+    def test_case_action_persists_only_authorized_designation(self):
+        case, _ = self.make_report(submitter=self.student)
+        self.client.force_login(self.staff)
+        denied_designation = self.client.post(reverse('discipline:case_action', args=[case.pk]), {
+            'action_type': CaseAction.ActionType.NOTE,
+            'details': 'Review note.',
+            'actor_position': 'Admin',
+        })
+        self.assertEqual(denied_designation.status_code, 200)
+        self.assertFalse(case.actions.exists())
+
+        response = self.client.post(reverse('discipline:case_action', args=[case.pk]), {
+            'action_type': CaseAction.ActionType.NOTE,
+            'details': 'Review note.',
+            'actor_position': 'Staff',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(case.actions.get().authority_position, 'Staff')
+
+    def test_review_record_saves_findings_recommendation_and_reviewer_designation(self):
+        case, _ = self.make_report(submitter=self.student)
+        self.client.force_login(self.staff)
+        review_page = self.client.get(reverse('discipline:case_review', args=[case.pk]))
+        self.assertEqual(review_page.status_code, 200)
+        self.assertContains(review_page, 'Verify Supporting Documents')
+        self.assertContains(review_page, 'Proceed for Investigation')
+        response = self.client.post(reverse('discipline:case_review', args=[case.pk]), {
+            'information_findings': 'The incident report is complete and consistent.',
+            'document_verification': 'The available attachment is relevant to the report.',
+            'recommended_classification': DisciplinaryCase.Classification.MINOR,
+            'recommendation': 'proceed_investigation',
+            'review_remarks': 'Proceed with interviews and preserve the submitted evidence.',
+            'actor_position': 'Staff',
+        })
+        self.assertEqual(response.status_code, 302)
+        review = case.actions.get(action_type=CaseAction.ActionType.REVIEW)
+        self.assertEqual(review.actor, self.staff)
+        self.assertEqual(review.authority_position, 'Staff')
+        self.assertEqual(review.recommendation, 'Proceed for Investigation')
+        self.assertIn('Classification at review: Not classified', review.details)
+        self.assertIn('The incident report is complete and consistent.', review.details)
+
+    def test_case_level_can_be_verified_by_authorized_staff_and_logged(self):
+        case, _ = self.make_report(submitter=self.student)
+        self.client.force_login(self.staff)
+        response = self.client.post(reverse('discipline:case_level_update', args=[case.pk]), {
+            'case_level': DisciplinaryCase.CaseLevel.SHS,
+        })
+        self.assertEqual(response.status_code, 302)
+        case.refresh_from_db()
+        self.assertEqual(case.case_level, DisciplinaryCase.CaseLevel.SHS)
+        level_audit = CaseAuditLog.objects.filter(
+            case=case,
+            actor=self.staff,
+            action='case_level_updated',
+        ).first()
+        self.assertIsNotNone(level_audit)
+        self.assertIn('SHS', level_audit.details)
+
+    def test_incident_log_filters_by_case_level_instead_of_report_type(self):
+        jhs_case, _ = self.make_report(submitter=self.student)
+        jhs_case.case_level = DisciplinaryCase.CaseLevel.JHS
+        jhs_case.save(update_fields=['case_level'])
+        shs_case, _ = self.make_report(submitter=self.student)
+        shs_case.case_level = DisciplinaryCase.CaseLevel.SHS
+        shs_case.save(update_fields=['case_level'])
+
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse('discipline:incident_log'), {'case_level': 'jhs'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['reports'].paginator.count, 1)
+        self.assertContains(response, 'Case Level')
+        self.assertNotContains(response, 'Report type')
+        self.assertContains(response, jhs_case.reference)
+        self.assertNotContains(response, shs_case.reference)
 
     def test_final_decision_requires_authority_and_uses_policy_outcomes(self):
         case, _ = self.make_report()
@@ -378,6 +471,11 @@ class DisciplineAccessAndWorkflowTests(TestCase):
             action_type=CaseAction.ActionType.DECISION,
             decision_outcome='Approved policy outcome',
         ).exists())
+        self.assertTrue(case.actions.filter(
+            action_type=CaseAction.ActionType.STATUS,
+            to_status=DisciplinaryCase.Status.DECISION_RECORDED,
+            authority_position='System administrator',
+        ).exists())
 
     def test_preliminary_classification_is_audited_without_finding_responsibility(self):
         case, _ = self.make_report()
@@ -389,8 +487,7 @@ class DisciplineAccessAndWorkflowTests(TestCase):
         response = self.client.post(reverse('discipline:case_classify', args=[case.pk]), {
             'classification': DisciplinaryCase.Classification.SERIOUS,
             'offense_category': policy.pk,
-            'classification_basis': 'Reported facts require review.',
-            'classification_remarks': 'Preliminary only.',
+            'classification_factual_basis': 'Reported facts require review. Preliminary only.',
             'change_reason': 'Initial review.',
         })
         self.assertEqual(response.status_code, 302)
@@ -569,6 +666,7 @@ class DisciplineRemovalRegressionTests(TestCase):
             'report_type': CaseReport.ReportType.INCIDENT,
             'submission_token': token,
             'reporting_position': 'Discipline Officer',
+            'case_level': DisciplinaryCase.CaseLevel.COLLEGE,
             'respondent_name': 'Test Student',
             'respondent_student_id': 'S-200',
             'narration': 'Incident submitted for review.',
@@ -579,6 +677,7 @@ class DisciplineRemovalRegressionTests(TestCase):
         self.assertEqual(first.status_code, 302)
         case = DisciplinaryCase.objects.get()
         self.assertEqual(case.finding, DisciplinaryCase.Finding.NOT_DETERMINED)
+        self.assertEqual(case.case_level, DisciplinaryCase.CaseLevel.COLLEGE)
 
         duplicate = self.client.post(reverse('discipline:intake'), payload)
         self.assertEqual(duplicate.status_code, 302)
@@ -630,6 +729,7 @@ class DisciplineRemovalRegressionTests(TestCase):
             'reporting_method': 'written',
             'respondent_name': 'Test Student',
             'respondent_student_id': 'S-200',
+            'case_level': DisciplinaryCase.CaseLevel.COLLEGE,
             'narration': 'Incident submitted for review.',
             'acknowledgment': 'on',
             'evidence': SimpleUploadedFile('evidence.pdf', b'%PDF-1.4 private evidence'),

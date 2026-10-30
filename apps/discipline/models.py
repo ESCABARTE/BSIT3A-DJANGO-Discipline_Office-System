@@ -153,6 +153,11 @@ class DisciplinaryCase(models.Model):
         SERIOUS = 'serious', 'Serious'
         EXPULSION_REVIEW = 'expulsion_review', 'Expulsion-level review'
 
+    class CaseLevel(models.TextChoices):
+        JHS     = 'jhs',     'JHS'
+        SHS     = 'shs',     'SHS'
+        COLLEGE = 'college', 'College'
+
     class Finding(models.TextChoices):
         NOT_DETERMINED = 'not_determined', 'Not determined'
         NOT_SUBSTANTIATED = 'not_substantiated', 'Not substantiated'
@@ -172,14 +177,22 @@ class DisciplinaryCase(models.Model):
     source_type = models.CharField(max_length=20, choices=[('complaint', 'Student complaint'), ('incident', 'Official incident report')])
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.SUBMITTED, db_index=True)
     academic_year = models.CharField(max_length=40, blank=True)
+    case_level = models.CharField(
+        max_length=10,
+        choices=CaseLevel.choices,
+        blank=True,
+        help_text='Educational level of the reported person: JHS, SHS, or College.',
+    )
     finding = models.CharField(max_length=20, choices=Finding.choices, default=Finding.NOT_DETERMINED)
     policy_version = models.CharField(max_length=80, default='Pending school approval')
     opened_at = models.DateTimeField(default=timezone.now, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
     assigned_officer = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='discipline_cases_assigned')
     classification = models.CharField(max_length=24, choices=Classification.choices, blank=True)
-    classification_remarks = models.TextField(blank=True)
-    classification_basis = models.TextField(blank=True)
+    classification_factual_basis = models.TextField(
+        blank=True,
+        help_text='Circumstances and factual basis supporting the assigned classification.',
+    )
     classified_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
         related_name='discipline_cases_classified',
@@ -495,6 +508,7 @@ class CaseAction(models.Model):
         DECISION = 'decision', 'Final decision'
         SANCTION = 'sanction', 'Approved sanction'
         APPEAL = 'appeal', 'Appeal / reconsideration'
+        REVIEW = 'review', 'Case review'
         NOTE = 'note', 'Case note'
         REFERRAL = 'referral', 'Referral'
 

@@ -15,13 +15,13 @@
       <div class="page-pretitle">Discipline Management</div>
       <h1 class="page-title mb-1">Incident Log</h1>
       <p class="text-secondary mb-0">
-        All submitted written complaints and incident reports.
+        All reports submitted through the unified Incident Report form.
         You see only reports you are authorised to access.
       </p>
     </div>
     <div class="ms-auto">
       <a class="btn btn-accent policy-add-btn" href="{% url 'discipline:intake' %}">
-        <i class="fas fa-clipboard-check me-2" aria-hidden="true"></i>File a Report
+      <i class="fas fa-clipboard-check me-2" aria-hidden="true"></i>Submit Incident Report
       </a>
     </div>
   </div>
@@ -36,15 +36,15 @@
             <div class="input-group">
               <span class="input-group-text"><i class="fas fa-search" aria-hidden="true"></i></span>
               <input id="il-search" type="search" name="q" value="{{ query }}"
-                     class="form-control" placeholder="Reference, student name or ID…">
+                     class="form-control" placeholder="Reference, reported person or ID…">
             </div>
           </div>
           <div class="col-6 col-md-2">
-            <label class="form-label" for="il-type">Report type</label>
-            <select id="il-type" name="report_type" class="form-select">
-              <option value="">All types</option>
-              {% for val, lbl in report_type_choices %}
-              <option value="{{ val }}" {% if type_filter == val %}selected{% endif %}>{{ lbl }}</option>
+            <label class="form-label" for="il-case-level">Case Level</label>
+            <select id="il-case-level" name="case_level" class="form-select">
+              <option value="">All levels</option>
+              {% for val, lbl in case_level_choices %}
+              <option value="{{ val }}" {% if case_level_filter == val %}selected{% endif %}>{{ lbl }}</option>
               {% endfor %}
             </select>
           </div>
@@ -61,7 +61,7 @@
             <button type="submit" class="btn btn-primary flex-fill">
               <i class="fas fa-filter me-1" aria-hidden="true"></i>Filter
             </button>
-            {% if query or type_filter or status_filter %}
+            {% if query or case_level_filter or status_filter %}
             <a href="{% url 'discipline:incident_log' %}" class="btn btn-outline-secondary" title="Clear filters">
               <i class="fas fa-times" aria-hidden="true"></i>
             </a>
@@ -83,8 +83,8 @@
         <thead>
           <tr>
             <th>Reference</th>
-            <th>Type</th>
-            <th>Respondent / Student</th>
+            <th>Case Level</th>
+            <th>Reported Person</th>
             <th>Submitted by</th>
             <th>Date Submitted</th>
             <th>Case Status</th>
@@ -99,17 +99,7 @@
                 {{ rpt.case.reference }}
               </span>
             </td>
-            <td>
-              {% if rpt.report_type == 'complaint' %}
-              <span class="badge bg-blue-lt">
-                <i class="fas fa-file-lines me-1" aria-hidden="true"></i>Complaint
-              </span>
-              {% else %}
-              <span class="badge bg-orange-lt">
-                <i class="fas fa-flag me-1" aria-hidden="true"></i>Incident
-              </span>
-              {% endif %}
-            </td>
+            <td>{{ rpt.case.get_case_level_display|default:'Needs verification' }}</td>
             <td>
               <div class="fw-medium">{{ rpt.respondent_name|default:"Not identified" }}</div>
               {% if rpt.respondent_student_id %}
@@ -143,7 +133,7 @@
                 </div>
                 <p class="empty-title">No reports found</p>
                 <p class="empty-subtitle">
-                  {% if query or type_filter or status_filter %}
+                  {% if query or case_level_filter or status_filter %}
                     Try adjusting your filters.
                     <a href="{% url 'discipline:incident_log' %}">Clear filters</a>
                   {% else %}
@@ -152,7 +142,7 @@
                 </p>
                 <div class="empty-action">
                   <a href="{% url 'discipline:intake' %}" class="btn btn-primary">
-                    <i class="fas fa-clipboard-list me-2" aria-hidden="true"></i>Submit a Report
+                    <i class="fas fa-clipboard-list me-2" aria-hidden="true"></i>Submit Incident Report
                   </a>
                 </div>
               </div>
@@ -172,19 +162,19 @@
         <ul class="pagination mb-0">
           {% if reports.has_previous %}
           <li class="page-item">
-            <a class="page-link" href="?page={{ reports.previous_page_number }}&q={{ query|urlencode }}&report_type={{ type_filter }}&status={{ status_filter }}">
+            <a class="page-link" href="?page={{ reports.previous_page_number }}&q={{ query|urlencode }}&case_level={{ case_level_filter }}&status={{ status_filter }}">
               <i class="fas fa-chevron-left" aria-hidden="true"></i>
             </a>
           </li>
           {% endif %}
           {% for num in reports.paginator.page_range %}
           <li class="page-item {% if reports.number == num %}active{% endif %}">
-            <a class="page-link" href="?page={{ num }}&q={{ query|urlencode }}&report_type={{ type_filter }}&status={{ status_filter }}">{{ num }}</a>
+            <a class="page-link" href="?page={{ num }}&q={{ query|urlencode }}&case_level={{ case_level_filter }}&status={{ status_filter }}">{{ num }}</a>
           </li>
           {% endfor %}
           {% if reports.has_next %}
           <li class="page-item">
-            <a class="page-link" href="?page={{ reports.next_page_number }}&q={{ query|urlencode }}&report_type={{ type_filter }}&status={{ status_filter }}">
+            <a class="page-link" href="?page={{ reports.next_page_number }}&q={{ query|urlencode }}&case_level={{ case_level_filter }}&status={{ status_filter }}">
               <i class="fas fa-chevron-right" aria-hidden="true"></i>
             </a>
           </li>
